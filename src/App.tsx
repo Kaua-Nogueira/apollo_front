@@ -1,14 +1,15 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   AirVent, ArrowRight, Banknote, Bell, Box, CalendarDays, Check, ChevronRight, CircleDollarSign,
-  ClipboardList, Clock3, Gauge, History, Home, LogOut, MapPin, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, Search,
+  ClipboardList, Clock3, Gauge, History, Home, LogOut, MapPin, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, ReceiptText, Search,
   Settings, ShieldCheck, Sparkles, Trash2, UserRound, Users, Wrench, X,
 } from 'lucide-react'
 import { api, ApiError } from './api'
 import { SystemAlert } from './SystemAlert'
+import { CustomerFormFields } from './CustomerFormFields'
 import type { Appointment, Customer, DashboardData, Employee, Status, User, WorkOrder } from './types'
-import { AgendaPageV2, CatalogPage, CustomerDetail, EquipmentDetail, EquipmentPage, FinancePage, OperationsPage, QuotesPage, RoutesVehiclesPage, TeamPage } from './Modules'
+import { AgendaPageV2, CatalogPage, CustomerDetail, EquipmentDetail, EquipmentPage, ExpensePage, FinancePage, OperationsPage, QuotesPage, RoutesVehiclesPage, TeamPage } from './Modules'
 import { DocumentsPage } from './DocumentsPage'
 import { SettingsPageV2 } from './SettingsPageV2'
 
@@ -86,21 +87,25 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
 
 const navItems = [
   ['/', 'Visão geral', Gauge], ['/central', 'Central do dia', Sparkles], ['/agenda', 'Agenda', CalendarDays], ['/ordens', 'Ordens de serviço', ClipboardList],
-  ['/clientes', 'Clientes', Users], ['/equipamentos', 'Equipamentos', AirVent], ['/catalogo', 'Serviços e produtos', Package], ['/financeiro', 'Financeiro', CircleDollarSign],
+  ['/clientes', 'Clientes', Users], ['/equipamentos', 'Equipamentos', AirVent], ['/catalogo', 'Serviços e produtos', Package],
   ['/documentos', 'Orçamentos e recibos', Banknote], ['/operacoes', 'Estoque e operação', Box], ['/rotas', 'Rotas e veículos', MapPin], ['/equipe', 'Equipe e ponto', Clock3], ['/configuracoes', 'Configurações', Settings],
 ] as const
 
 function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [open, setOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('apollo.sidebar') === 'collapsed')
+  const [financeExpanded, setFinanceExpanded] = useState(false)
+  const location = useLocation()
   const [notice, setNotice] = useState('')
   const technicianNav = [['/tecnico', 'Minha agenda', CalendarDays], ['/ordens', 'Minhas ordens', ClipboardList]] as const
   const navigation = user.role === 'technician' ? technicianNav : navItems
+  const financeActive = location.pathname.startsWith('/financeiro')
+  useEffect(() => { if (financeActive) setFinanceExpanded(true) }, [financeActive])
   const toggleSidebar = () => setCollapsed(value => { const next = !value; localStorage.setItem('apollo.sidebar', next ? 'collapsed' : 'expanded'); return next })
   return <div className={`shell ${collapsed ? 'sidebar-collapsed' : ''}`}>
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
       <div className="sidebar-brand-row"><div className="brand"><span><AirVent /></span><b>Apollo</b></div><button className="sidebar-collapse" onClick={toggleSidebar} aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'} title={collapsed ? 'Expandir menu' : 'Recolher menu'}>{collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</button></div><button className="close-menu" onClick={() => setOpen(false)} aria-label="Fechar menu"><X /></button>
-      <nav>{navigation.map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)} title={collapsed ? label : undefined}><Icon /><span>{label}</span></NavLink>)}</nav>
+      <nav>{navigation.map(([to, label, Icon]) => <Fragment key={to}><NavLink to={to} end={to === '/'} onClick={() => setOpen(false)} title={collapsed ? label : undefined}><Icon /><span>{label}</span></NavLink>{user.role !== 'technician' && to === '/catalogo' && <div className={`sidebar-submenu${financeActive ? ' submenu-active' : ''}`}><button type="button" className="sidebar-submenu-trigger" onClick={() => setFinanceExpanded(value => !value)} aria-expanded={financeExpanded} title={collapsed ? 'Financeiro' : undefined}><CircleDollarSign/><span>Financeiro</span><ChevronRight className="submenu-chevron"/></button>{financeExpanded && <div className="sidebar-submenu-items"><NavLink to="/financeiro/caixa" onClick={() => setOpen(false)} title={collapsed ? 'Caixa' : undefined}><Banknote/><span>Caixa</span></NavLink><NavLink to="/financeiro/saidas" onClick={() => setOpen(false)} title={collapsed ? 'Saídas' : undefined}><ReceiptText/><span>Saídas</span></NavLink></div>}</div>}</Fragment>)}</nav>
       <div className="sidebar-user"><div className="avatar">{user.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="sidebar-user-copy"><strong>{user.name}</strong><span>{user.role === 'admin' ? 'Administrador' : 'Técnico'}</span></div><button onClick={onLogout} aria-label="Sair" title="Sair"><LogOut /></button></div>
     </aside>
     {open && <button className="overlay" onClick={() => setOpen(false)} aria-label="Fechar menu" />}
@@ -116,7 +121,9 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
         <Route path="/equipamentos" element={<EquipmentPage />} />
         <Route path="/equipamentos/:id" element={<EquipmentDetail />} />
         <Route path="/catalogo" element={<CatalogPage />} />
-        <Route path="/financeiro" element={<FinancePage />} />
+        <Route path="/financeiro" element={<Navigate to="/financeiro/caixa" replace />} />
+        <Route path="/financeiro/caixa" element={<FinancePage />} />
+        <Route path="/financeiro/saidas" element={<ExpensePage />} />
         <Route path="/orcamentos" element={<QuotesPage />} />
         <Route path="/documentos" element={<DocumentsPage />} />
         <Route path="/operacoes" element={<OperationsPage />} />
@@ -195,7 +202,7 @@ function Customers() {
   return <main className="content"><PageHeader eyebrow="RELACIONAMENTO" title="Clientes"><Button onClick={() => { setErrorMessage(''); setCreating(true) }}><Plus /> Novo cliente</Button></PageHeader>
     <div className="toolbar"><label className="search"><Search /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome ou telefone" /></label><span>{filtered.length} clientes</span></div>
     {error && <SystemAlert>{error}</SystemAlert>}{notice && <SystemAlert tone="success" onDismiss={() => setNotice('')}>{notice}</SystemAlert>}{errorMessage && !creating && <SystemAlert>{errorMessage}</SystemAlert>}{loading ? <Loading /> : <section className="panel table-panel"><div className="data-table"><div className="table-head customer-grid"><span>Cliente</span><span>Contato</span><span>Endereços</span><span>Equipamentos</span><span>OS</span><span></span></div>{filtered.map(customer => <NavLink to={`/clientes/${customer.id}`} className="table-row customer-grid customer-table-row" key={customer.id}><div className="customer-name"><span className="avatar soft">{customer.name[0]}</span><div><strong>{customer.name}</strong><small>{customer.document || 'Documento não informado'}</small></div></div><div><strong>{customer.phone}</strong><small>{customer.email || 'Sem e-mail'}</small></div><span>{customer.addresses?.length ?? 0}</span><span>{customer.equipment?.length ?? 0}</span><span>{customer.work_orders_count ?? 0}</span><ChevronRight /></NavLink>)}</div>{!filtered.length && <Empty icon={<Users />} title="Nenhum cliente encontrado" text={search ? 'Tente buscar por outro nome ou telefone.' : 'Cadastre o primeiro cliente para começar.'} />}</section>}
-    {creating && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setCreating(false)} aria-label="Fechar" /><form className="modal" onSubmit={save}><div className="modal-header"><div className="modal-heading"><span className="modal-symbol"><Plus /></span><div><p className="eyebrow">RELACIONAMENTO</p><h2>Novo cliente</h2></div></div><button type="button" className="icon-button" onClick={() => setCreating(false)} aria-label="Fechar"><X /></button></div><div className="form-grid"><label className="span-2">Nome completo ou razão social<input name="name" required /></label><label>CPF/CNPJ<input name="document" /></label><label>Telefone<input name="phone" required /></label><label>WhatsApp<input name="whatsapp" /></label><label>E-mail<input name="email" type="email" /></label><label className="span-2">Observações<textarea name="notes" rows={3} /></label></div>{errorMessage && <SystemAlert>{errorMessage}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setCreating(false)}>Cancelar</Button><Button disabled={busy}>{busy ? 'Salvando...' : 'Salvar cliente'}</Button></div></form></div>}
+    {creating && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setCreating(false)} aria-label="Fechar" /><form className="modal customer-form-modal" onSubmit={save}><div className="modal-header"><div className="modal-heading"><span className="modal-symbol"><Plus /></span><div><p className="eyebrow">RELACIONAMENTO</p><h2>Novo cliente</h2><small>Cadastre os dados e a pessoa de contato principal.</small></div></div><button type="button" className="icon-button" onClick={() => setCreating(false)} aria-label="Fechar"><X /></button></div><CustomerFormFields />{errorMessage && <SystemAlert>{errorMessage}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setCreating(false)}>Cancelar</Button><Button disabled={busy}>{busy ? 'Salvando...' : 'Salvar cliente'}</Button></div></form></div>}
   </main>
 }
 

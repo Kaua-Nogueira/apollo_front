@@ -2,9 +2,9 @@ export type Status = 'scheduled' | 'confirmed' | 'traveling' | 'arrived' | 'in_s
 
 export interface User { id: number; name: string; email: string; role: 'admin' | 'technician'; employee?: Employee }
 export interface Employee { id: number; name: string; phone?: string; specialty?: string; active: boolean; user?: User }
-export interface Address { id: number; label: string; street: string; number: string; district: string; city: string; state: string; zip_code?: string }
+export interface Address { id: number; label: string; street?: string | null; number: string; district?: string | null; city?: string | null; state?: string | null; zip_code?: string | null }
 export interface Equipment { id: number; location: string; type: string; brand?: string; model?: string; btus?: number; serial_number?: string; refrigerant_gas?: string; next_maintenance_at?: string }
-export interface Customer { id: number; name: string; document?: string; phone: string; whatsapp?: string; email?: string; notes?: string; active: boolean; addresses?: Address[]; equipment?: Equipment[]; work_orders_count?: number }
+export interface Customer { id: number; name: string; contact_name?: string; document?: string; phone: string; whatsapp?: string; email?: string; notes?: string; active: boolean; addresses?: Address[]; equipment?: Equipment[]; work_orders_count?: number }
 export interface Appointment { id: number; scheduled_at: string; duration_minutes: number; type: string; status: Status; notes?: string; customer: Customer; address: Address; technician?: Employee; equipment?: Equipment; work_order?: WorkOrder }
 export interface WorkOrderItem { id: number; name: string; quantity: number; unit_price: number; discount: number; total: number }
 export interface WorkOrderEvent { id: number; from_status?: Status; to_status: Status; occurred_at: string; notes?: string }
