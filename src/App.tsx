@@ -3,7 +3,7 @@ import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from 'react-
 import {
   AirVent, ArrowRight, Banknote, Bell, Box, CalendarDays, Check, ChevronRight, CircleDollarSign,
   ClipboardList, Clock3, Gauge, History, Home, LogOut, MapPin, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, Search,
-  Settings, ShieldCheck, Sparkles, Trash2, UserRound, Users, Wrench, X,
+  Pencil, Settings, ShieldCheck, Sparkles, Trash2, UserRound, Users, Wrench, X,
 } from 'lucide-react'
 import { api, ApiError } from './api'
 import { SystemAlert } from './SystemAlert'
@@ -169,17 +169,57 @@ function DayCenter({ agenda = false }: { agenda?: boolean }) {
 }
 
 function Customers() {
-  const [search, setSearch] = useState(''); const [modal, setModal] = useState(false); const [errorMessage, setErrorMessage] = useState('')
+  const [search, setSearch] = useState('')
+  const [editing, setEditing] = useState<Customer | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [deleting, setDeleting] = useState<Customer | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [notice, setNotice] = useState('')
   const { data, loading, error, reload } = useRemote<Customer[]>('/customers', [])
   const filtered = data.filter(x => x.name.toLowerCase().includes(search.toLowerCase()) || x.phone?.includes(search))
-  const create = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setErrorMessage(''); const form = new FormData(event.currentTarget)
-    try { await api.post('/customers', Object.fromEntries(form)); setModal(false); await reload() } catch (e) { setErrorMessage(e instanceof Error ? e.message : 'Erro ao salvar') }
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusy(true)
+    setErrorMessage('')
+    const form = Object.fromEntries(new FormData(event.currentTarget))
+    try {
+      if (editing) {
+        await api.put(`/customers/${editing.id}`, form)
+        setNotice('Cadastro do cliente atualizado.')
+      } else {
+        await api.post('/customers', form)
+        setNotice('Cliente cadastrado.')
+      }
+      setEditing(null)
+      setCreating(false)
+      await reload()
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : 'Não foi possível salvar o cliente.')
+    } finally {
+      setBusy(false)
+    }
   }
-  return <main className="content"><PageHeader eyebrow="RELACIONAMENTO" title="Clientes"><Button onClick={() => setModal(true)}><Plus /> Novo cliente</Button></PageHeader>
+  const archive = async () => {
+    if (!deleting) return
+    setBusy(true)
+    setErrorMessage('')
+    try {
+      await api.delete(`/customers/${deleting.id}`)
+      setNotice(`Cliente ${deleting.name} arquivado.`)
+      setDeleting(null)
+      await reload()
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : 'Não foi possível excluir o cliente.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <main className="content"><PageHeader eyebrow="RELACIONAMENTO" title="Clientes"><Button onClick={() => { setErrorMessage(''); setCreating(true) }}><Plus /> Novo cliente</Button></PageHeader>
     <div className="toolbar"><label className="search"><Search /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome ou telefone" /></label><span>{filtered.length} clientes</span></div>
-    {error && <SystemAlert>{error}</SystemAlert>}{loading ? <Loading /> : <section className="panel table-panel"><div className="data-table"><div className="table-head customer-grid"><span>Cliente</span><span>Contato</span><span>Endereços</span><span>Equipamentos</span><span>OS</span><span /></div>{filtered.map(customer => <NavLink to={`/clientes/${customer.id}`} className="table-row customer-grid" key={customer.id}><div className="customer-name"><span className="avatar soft">{customer.name[0]}</span><div><strong>{customer.name}</strong><small>{customer.document || 'Documento não informado'}</small></div></div><div><strong>{customer.phone}</strong><small>{customer.email}</small></div><span>{customer.addresses?.length ?? 0}</span><span>{customer.equipment?.length ?? 0}</span><span>{customer.work_orders_count ?? 0}</span><span className="icon-button"><ChevronRight /></span></NavLink>)}</div></section>}
-    {modal && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(false)} aria-label="Fechar" /><form className="modal" onSubmit={create}><div className="modal-header"><div><p className="eyebrow">CADASTRO</p><h2>Novo cliente</h2></div><button type="button" className="icon-button" onClick={() => setModal(false)}><X /></button></div><div className="form-grid"><label className="span-2">Nome completo ou razão social<input name="name" required /></label><label>CPF/CNPJ<input name="document" /></label><label>Telefone<input name="phone" required /></label><label>WhatsApp<input name="whatsapp" /></label><label>E-mail<input name="email" type="email" /></label><label className="span-2">Observações<textarea name="notes" rows={3} /></label></div>{errorMessage && <SystemAlert>{errorMessage}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(false)}>Cancelar</Button><Button>Salvar cliente</Button></div></form></div>}
+    {error && <SystemAlert>{error}</SystemAlert>}{notice && <SystemAlert tone="success" onDismiss={() => setNotice('')}>{notice}</SystemAlert>}{errorMessage && !editing && !creating && !deleting && <SystemAlert>{errorMessage}</SystemAlert>}{loading ? <Loading /> : <section className="panel table-panel"><div className="data-table"><div className="table-head customer-grid"><span>Cliente</span><span>Contato</span><span>Endereços</span><span>Equipamentos</span><span>OS</span><span>Ações</span></div>{filtered.map(customer => <div className="table-row customer-grid" key={customer.id}><NavLink to={`/clientes/${customer.id}`} className="customer-name customer-row-link"><span className="avatar soft">{customer.name[0]}</span><div><strong>{customer.name}</strong><small>{customer.document || 'Documento não informado'}</small></div></NavLink><div><strong>{customer.phone}</strong><small>{customer.email || 'Sem e-mail'}</small></div><span>{customer.addresses?.length ?? 0}</span><span>{customer.equipment?.length ?? 0}</span><span>{customer.work_orders_count ?? 0}</span><div className="customer-row-actions"><button type="button" className="icon-button" onClick={() => { setErrorMessage(''); setEditing(customer) }} aria-label={`Editar ${customer.name}`} title="Editar cliente"><Pencil /></button><button type="button" className="icon-button customer-delete-button" onClick={() => { setErrorMessage(''); setDeleting(customer) }} aria-label={`Excluir ${customer.name}`} title="Excluir cliente"><Trash2 /></button></div></div>)}</div>{!filtered.length && <Empty icon={<Users />} title="Nenhum cliente encontrado" text={search ? 'Tente buscar por outro nome ou telefone.' : 'Cadastre o primeiro cliente para começar.'} />}</section>}
+    {(creating || editing) && <div className="modal-layer"><button className="modal-backdrop" onClick={() => { setCreating(false); setEditing(null) }} aria-label="Fechar" /><form className="modal" onSubmit={save}><div className="modal-header"><div className="modal-heading"><span className="modal-symbol">{editing ? <Pencil /> : <Plus />}</span><div><p className="eyebrow">RELACIONAMENTO</p><h2>{editing ? 'Editar cliente' : 'Novo cliente'}</h2></div></div><button type="button" className="icon-button" onClick={() => { setCreating(false); setEditing(null) }} aria-label="Fechar"><X /></button></div><div className="form-grid"><label className="span-2">Nome completo ou razão social<input name="name" required defaultValue={editing?.name ?? ''} /></label><label>CPF/CNPJ<input name="document" defaultValue={editing?.document ?? ''} /></label><label>Telefone<input name="phone" required defaultValue={editing?.phone ?? ''} /></label><label>WhatsApp<input name="whatsapp" defaultValue={editing?.whatsapp ?? ''} /></label><label>E-mail<input name="email" type="email" defaultValue={editing?.email ?? ''} /></label><label className="span-2">Observações<textarea name="notes" rows={3} defaultValue={editing?.notes ?? ''} /></label></div>{errorMessage && <SystemAlert>{errorMessage}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => { setCreating(false); setEditing(null) }}>Cancelar</Button><Button disabled={busy}>{busy ? 'Salvando...' : editing ? 'Salvar alterações' : 'Salvar cliente'}</Button></div></form></div>}
+    {deleting && <ConfirmDialog title="Excluir este cliente?" confirmLabel="Excluir cliente" busy={busy} onClose={() => setDeleting(null)} onConfirm={() => void archive()}><p><strong>{deleting.name}</strong> será arquivado e deixará de aparecer na lista. As ordens de serviço e o histórico relacionados serão preservados.</p>{errorMessage && <SystemAlert>{errorMessage}</SystemAlert>}</ConfirmDialog>}
   </main>
 }
 
