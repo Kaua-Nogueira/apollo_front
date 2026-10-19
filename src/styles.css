@@ -616,3 +616,144 @@ input:focus,select:focus,textarea:focus { border-color:#20a4b8; box-shadow:0 0 0
 .item-remove-button:hover { border-color:#e9b8b2; background:#fee9e7; color:#982f25; }
 .item-remove-button svg { width:15px; height:15px; }
 @media(max-width:600px){.items-table>div:not(.empty){grid-template-columns:28px minmax(0,1fr) auto 34px}.items-table>div:not(.empty)>span:nth-child(3){display:none}}
+
+/* Ponto do Funcionário & Mobile Optimization */
+.ponto-page-container { max-width: 1080px; margin: 0 auto; padding-bottom: 70px; }
+.ponto-header-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; margin-bottom: 18px; border-radius: 16px; background: linear-gradient(135deg, #fff 0%, #f7fafc 100%); border: 1px solid var(--line); }
+.ponto-header-left h1 { margin: 2px 0 4px; font-size: clamp(1.4rem, 3.2vw, 2rem); letter-spacing: -0.03em; color: var(--navy); }
+.ponto-employee-role { margin: 0; color: var(--muted); font-size: 0.82rem; font-weight: 500; }
+.ponto-live-clock { display: flex; align-items: center; gap: 9px; padding: 10px 18px; border-radius: 12px; background: var(--navy); color: #83e6ee; font-family: 'Manrope', sans-serif; font-size: 1.4rem; font-weight: 800; letter-spacing: 0.05em; box-shadow: 0 4px 14px rgba(16, 42, 67, 0.2); }
+.ponto-live-clock svg { color: #83e6ee; }
+
+/* Segmented Tabs (Mobile-first) */
+.ponto-segmented-tabs { display: flex; gap: 6px; padding: 5px; margin-bottom: 18px; border-radius: 14px; background: #e2e8f0; }
+.seg-tab { flex: 1; min-height: 44px; border: 0; background: transparent; border-radius: 10px; font-weight: 700; font-size: 0.88rem; display: flex; align-items: center; justify-content: center; gap: 7px; color: #64748b; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); touch-action: manipulation; }
+.seg-tab svg { width: 17px; height: 17px; }
+.seg-tab:hover:not(.active) { color: var(--navy); }
+.seg-tab.active { background: #fff; color: var(--navy); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.09); font-weight: 800; }
+
+/* Day Stepper */
+.ponto-day-stepper { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-radius: 14px; background: #fff; margin-bottom: 20px; border: 1px solid var(--line); }
+.day-step-btn { border: 1px solid var(--line); background: #f8fafc; border-radius: 9px; min-height: 40px; padding: 0 14px; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.82rem; color: #475569; cursor: pointer; transition: all 0.18s; touch-action: manipulation; }
+.day-step-btn:hover { background: #edf2f7; border-color: #cbd5e1; color: var(--navy); }
+.day-step-btn:active { transform: scale(0.97); }
+.day-stepper-center { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; text-align: center; color: var(--navy); font-size: 0.95rem; }
+.day-stepper-center svg { color: var(--cyan); }
+.badge-jump-today { background: #fee2e2; color: #991b1b; border: 0; border-radius: 20px; padding: 3px 9px; font-size: 0.72rem; font-weight: 800; cursor: pointer; touch-action: manipulation; }
+.btn-label-desktop { display: inline; }
+@media (max-width: 600px) {
+  .btn-label-desktop { display: none; }
+  .day-step-btn { padding: 0 10px; }
+  .ponto-header-card { flex-direction: column; align-items: stretch; text-align: center; padding: 18px 16px; }
+  .ponto-live-clock { justify-content: center; width: 100%; font-size: 1.3rem; }
+}
+
+/* Layout Grid */
+.ponto-layout-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr); gap: 24px; align-items: start; }
+.ponto-main-col { display: flex; flex-direction: column; gap: 20px; }
+.ponto-side-col { display: flex; flex-direction: column; gap: 20px; }
+.ponto-calendar-view, .ponto-history-view { display: flex; flex-direction: column; gap: 20px; }
+.calendar-punch-area { display: flex; flex-direction: column; gap: 20px; margin-top: 20px; }
+
+@media (max-width: 900px) {
+  .desktop-only { display: none !important; }
+  .ponto-layout-grid { grid-template-columns: 1fr; }
+}
+
+/* Action Card & Big Single Button */
+.ponto-action-card { padding: 22px 24px; border-radius: 16px; background: #fff; border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(16, 42, 67, 0.05); }
+.ponto-action-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.ponto-action-heading h2 { margin: 0; font-size: 1.35rem; color: var(--navy); }
+.ponto-status-tag { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 20px; background: #f0f4f7; font-size: 0.8rem; font-weight: 700; color: #475569; }
+.status-indicator { width: 9px; height: 9px; border-radius: 50%; background: #94a3b8; }
+.status-indicator.working { background: #16a34a; box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.2); animation: pulse 2s infinite; }
+.status-indicator.on_break { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2); }
+.status-indicator.completed { background: #0284c7; }
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+.ponto-target-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 11px; margin-bottom: 18px; }
+.target-icon { width: 32px; height: 32px; border-radius: 8px; background: #e0f2fe; color: #0284c7; display: grid; place-items: center; flex: 0 0 auto; }
+.target-text { flex: 1; min-width: 0; }
+.target-text small { display: block; color: var(--muted); font-size: 0.72rem; }
+.target-text strong { display: block; color: var(--navy); font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.target-back-today { border: 0; background: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 800; cursor: pointer; flex: 0 0 auto; touch-action: manipulation; }
+
+/* BOTAO UNICO (Mobile Optimized) */
+.ponto-big-button { width: 100%; min-height: 88px; padding: 18px 22px; border-radius: 16px; border: 0; background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%); color: #fff; display: flex; align-items: center; gap: 16px; cursor: pointer; transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 10px 24px rgba(16, 42, 67, 0.22); text-align: left; touch-action: manipulation; user-select: none; }
+.ponto-big-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 14px 28px rgba(16, 42, 67, 0.28); background: linear-gradient(135deg, #184762 0%, #1e5978 100%); }
+.ponto-big-button:active:not(:disabled) { transform: scale(0.98); }
+.ponto-big-button:disabled { opacity: 0.7; cursor: not-allowed; }
+.ponto-big-button.is-working { background: linear-gradient(135deg, #14532d 0%, #15803d 100%); box-shadow: 0 10px 24px rgba(21, 128, 61, 0.25); }
+.ponto-big-button.is-working:hover:not(:disabled) { background: linear-gradient(135deg, #166534 0%, #16a34a 100%); box-shadow: 0 14px 28px rgba(21, 128, 61, 0.35); }
+.ponto-btn-icon { width: 52px; height: 52px; border-radius: 14px; background: rgba(255, 255, 255, 0.15); display: grid; place-items: center; flex: 0 0 auto; color: #83e6ee; }
+.ponto-big-button.is-working .ponto-btn-icon { color: #86efac; }
+.ponto-btn-copy { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.ponto-btn-copy strong { font-size: 1.25rem; font-family: 'Manrope', sans-serif; letter-spacing: -0.02em; }
+.ponto-btn-copy span { font-size: 0.8rem; color: #cbd5e1; }
+.ponto-btn-sparkle { color: #83e6ee; opacity: 0.8; flex: 0 0 auto; }
+
+/* Day Entries Timeline */
+.ponto-day-entries { padding: 20px 22px; border-radius: 16px; background: #fff; border: 1px solid var(--line); }
+.ponto-count-badge { padding: 4px 10px; border-radius: 12px; background: #e0f2fe; color: #0369a1; font-size: 0.75rem; font-weight: 700; }
+.ponto-timeline { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; position: relative; padding-left: 8px; }
+.ponto-timeline::before { content: ''; position: absolute; left: 23px; top: 12px; bottom: 12px; width: 2px; background: #e2e8f0; }
+.ponto-timeline-item { display: flex; align-items: center; gap: 14px; position: relative; z-index: 2; }
+.timeline-node { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0,0,0,0.12); flex: 0 0 auto; }
+.timeline-content { display: flex; align-items: center; justify-content: space-between; flex: 1; padding: 12px 16px; border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0; }
+.timeline-content strong { color: var(--navy); font-size: 0.95rem; }
+.timeline-content time { font-family: 'Manrope', sans-serif; font-size: 1.05rem; font-weight: 800; color: #1e293b; }
+.ponto-empty-day { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 32px 18px; text-align: center; color: var(--muted); }
+.ponto-empty-day svg { color: #94a3b8; }
+.ponto-empty-day p { margin: 0; font-weight: 600; color: #475569; }
+.ponto-empty-day small { color: #94a3b8; max-width: 320px; font-size: 0.8rem; }
+
+/* Presencas Anteriores */
+.ponto-history-section { padding: 20px 22px; border-radius: 16px; background: #fff; border: 1px solid var(--line); }
+.ponto-month-tag { font-size: 0.75rem; font-weight: 700; color: var(--cyan); text-transform: uppercase; letter-spacing: 0.08em; }
+.ponto-history-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.ponto-history-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid #e2e8f0; background: #fff; cursor: pointer; transition: all 0.2s ease; touch-action: manipulation; }
+.ponto-history-item:hover { border-color: var(--cyan); background: #f0fdfa; transform: translateX(2px); }
+.ponto-history-item:active { transform: scale(0.99); }
+.ponto-history-item.is-selected { border-color: var(--cyan); background: #e6f7fa; box-shadow: inset 3px 0 var(--cyan); }
+.history-date-col { display: flex; align-items: center; gap: 10px; min-width: 125px; }
+.history-dot { width: 8px; height: 8px; border-radius: 50%; background: #16a34a; flex: 0 0 auto; }
+.history-date-col strong { display: block; color: var(--navy); font-size: 0.92rem; }
+.history-date-col small { color: var(--muted); font-size: 0.76rem; }
+.history-times-col { display: flex; gap: 14px; font-size: 0.85rem; color: #64748b; flex-wrap: wrap; }
+.history-times-col strong { color: var(--navy); }
+.history-badge-col .pill { display: inline-flex; align-items: center; font-size: 0.75rem; }
+
+/* Calendar (Touch Optimized) */
+.ponto-calendar-card { padding: 20px 22px; border-radius: 16px; background: #fff; border: 1px solid var(--line); }
+.ponto-calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.calendar-title strong { font-size: 1.1rem; font-family: 'Manrope', sans-serif; color: var(--navy); }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.calendar-grid.weekdays { margin-bottom: 6px; }
+.weekday-label { text-align: center; font-size: 0.72rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; padding: 4px 0; }
+.calendar-day { aspect-ratio: 1; min-height: 44px; border: 1px solid transparent; border-radius: 10px; background: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; font-weight: 700; font-size: 0.92rem; color: #334155; transition: all 0.16s ease; padding: 0; touch-action: manipulation; }
+.calendar-day:hover:not(.empty-day) { background: #e2e8f0; }
+.calendar-day:active:not(.empty-day) { transform: scale(0.95); }
+.calendar-day.empty-day { background: transparent; cursor: default; }
+.calendar-day.is-today { border-color: var(--cyan); font-weight: 800; }
+.calendar-day.is-selected { background: var(--navy) !important; color: #fff !important; box-shadow: 0 4px 10px rgba(16, 42, 67, 0.25); }
+.calendar-day.is-selected .presence-dot { background: #83e6ee; }
+.calendar-day.has-ponto:not(.is-selected) { background: #ecfdf5; color: #065f46; font-weight: 800; }
+.presence-dot { position: absolute; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: #16a34a; }
+.calendar-legend { display: flex; align-items: center; gap: 14px; margin-top: 16px; padding-top: 12px; border-top: 1px solid #f1f5f9; font-size: 0.75rem; color: var(--muted); }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+.legend-dot.green { background: #16a34a; }
+.legend-dot.blue { background: var(--navy); }
+
+/* Stats Card */
+.ponto-stats-card { padding: 20px 22px; border-radius: 16px; background: #fff; border: 1px solid var(--line); }
+.ponto-stats-card h3 { margin: 0 0 12px; font-size: 0.95rem; color: var(--navy); font-family: 'Manrope', sans-serif; }
+.ponto-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.stat-box { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px; border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0; }
+.stat-label { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-value { font-size: 1.55rem; font-family: 'Manrope', sans-serif; color: var(--navy); font-weight: 800; }
+
+/* Mobile Bottom Nav Action */
+.bottom-nav-action { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #718490; font-size: 0.65rem; font-weight: 700; border: 0; background: transparent; padding: 0; cursor: pointer; touch-action: manipulation; }
+.bottom-nav-action svg { width: 20px; }
+.bottom-nav-action:hover, .bottom-nav-action:active { color: #dc2626; }

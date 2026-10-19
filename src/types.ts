@@ -1,6 +1,43 @@
 export type Status = 'scheduled' | 'confirmed' | 'traveling' | 'arrived' | 'in_service' | 'awaiting_approval' | 'completed' | 'cancelled'
 
-export interface User { id: number; name: string; email: string; role: 'admin' | 'technician'; employee?: Employee }
+export interface User { id: number; name: string; email: string; role: 'admin' | 'technician' | 'employee'; employee?: Employee }
+
+export interface PontoEntry {
+  id: number
+  type: 'clock_in' | 'clock_out' | string
+  time: string
+  occurred_at: string
+  notes?: string
+}
+
+export interface PontoHistoryDay {
+  date: string
+  entries_count: number
+  first_time?: string
+  last_time?: string
+  last_type?: string
+  entries: PontoEntry[]
+}
+
+export interface PontoData {
+  selected_date: string
+  month: string
+  day_entries: PontoEntry[]
+  dates_with_entries: string[]
+  clock_status: 'off' | 'working' | 'completed'
+  next_action: 'clock_in' | 'clock_out'
+  next_action_label: string
+  recent_history: PontoHistoryDay[]
+  month_stats: {
+    days_worked: number
+    total_entries: number
+  }
+  employee: {
+    id: number
+    name: string
+    specialty?: string
+  }
+}
 export interface Employee { id: number; name: string; phone?: string; specialty?: string; active: boolean; user?: User }
 export interface Address { id: number; label: string; street?: string | null; number: string; district?: string | null; city?: string | null; state?: string | null; zip_code?: string | null }
 export interface Equipment { id: number; location: string; type: string; brand?: string; model?: string; btus?: number; serial_number?: string; refrigerant_gas?: string; next_maintenance_at?: string }

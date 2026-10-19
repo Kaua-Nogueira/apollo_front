@@ -12,6 +12,7 @@ import type { Appointment, Customer, DashboardData, Employee, Status, User, Work
 import { AgendaPageV2, CatalogPage, CustomerDetail, EquipmentDetail, EquipmentPage, ExpensePage, FinancePage, OperationsPage, QuotesPage, RoutesVehiclesPage, TeamPage } from './Modules'
 import { DocumentsPage } from './DocumentsPage'
 import { SettingsPageV2 } from './SettingsPageV2'
+import { EmployeePontoPage } from './EmployeePontoPage'
 
 const statusLabels: Record<Status, string> = {
   scheduled: 'Agendado', confirmed: 'Confirmado', traveling: 'Em deslocamento', arrived: 'No local',
@@ -54,8 +55,8 @@ function useRemote<T>(path: string, initial: T) {
 }
 
 function Login({ onLogin }: { onLogin: (user: User) => void }) {
-  const [email, setEmail] = useState('admin@apollo.com.br')
-  const [password, setPassword] = useState('password')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async (event: FormEvent) => {
@@ -75,11 +76,10 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
       <form className="login-card" onSubmit={submit}>
         <div className="mobile-brand"><AirVent /> Apollo</div>
         <p className="eyebrow">ÁREA SEGURA</p><h2>Bem-vindo de volta</h2><p className="muted">Acesse a operação da sua equipe.</p>
-        <label>E-mail<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
-        <label>Senha<input type="password" value={password} onChange={e => setPassword(e.target.value)} required /></label>
+        <label>E-mail<input type="email" placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" /></label>
+        <label>Senha<input type="password" placeholder="Sua senha" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" /></label>
         {error && <SystemAlert>{error}</SystemAlert>}
         <Button disabled={busy}>{busy ? 'Entrando...' : 'Entrar no sistema'} <ArrowRight size={18} /></Button>
-        <div className="demo-hint"><ShieldCheck size={17} /><span>Demo: admin@apollo.com.br<br />Senha: password</span></div>
       </form>
     </section>
   </main>
@@ -97,47 +97,77 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [financeExpanded, setFinanceExpanded] = useState(false)
   const location = useLocation()
   const [notice, setNotice] = useState('')
+  const employeeNav = [['/ponto', 'Meu ponto', Clock3]] as const
   const technicianNav = [['/tecnico', 'Minha agenda', CalendarDays], ['/ordens', 'Minhas ordens', ClipboardList]] as const
-  const navigation = user.role === 'technician' ? technicianNav : navItems
+  const navigation = user.role === 'employee' ? employeeNav : user.role === 'technician' ? technicianNav : navItems
   const financeActive = location.pathname.startsWith('/financeiro')
   useEffect(() => { if (financeActive) setFinanceExpanded(true) }, [financeActive])
   const toggleSidebar = () => setCollapsed(value => { const next = !value; localStorage.setItem('apollo.sidebar', next ? 'collapsed' : 'expanded'); return next })
   return <div className={`shell ${collapsed ? 'sidebar-collapsed' : ''}`}>
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
       <div className="sidebar-brand-row"><div className="brand"><span><AirVent /></span><b>Apollo</b></div><button className="sidebar-collapse" onClick={toggleSidebar} aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'} title={collapsed ? 'Expandir menu' : 'Recolher menu'}>{collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</button></div><button className="close-menu" onClick={() => setOpen(false)} aria-label="Fechar menu"><X /></button>
-      <nav>{navigation.map(([to, label, Icon]) => <Fragment key={to}><NavLink to={to} end={to === '/'} onClick={() => setOpen(false)} title={collapsed ? label : undefined}><Icon /><span>{label}</span></NavLink>{user.role !== 'technician' && to === '/catalogo' && <div className={`sidebar-submenu${financeActive ? ' submenu-active' : ''}`}><button type="button" className="sidebar-submenu-trigger" onClick={() => setFinanceExpanded(value => !value)} aria-expanded={financeExpanded} title={collapsed ? 'Financeiro' : undefined}><CircleDollarSign/><span>Financeiro</span><ChevronRight className="submenu-chevron"/></button>{financeExpanded && <div className="sidebar-submenu-items"><NavLink to="/financeiro/caixa" onClick={() => setOpen(false)} title={collapsed ? 'Caixa' : undefined}><Banknote/><span>Caixa</span></NavLink><NavLink to="/financeiro/saidas" onClick={() => setOpen(false)} title={collapsed ? 'Saídas' : undefined}><ReceiptText/><span>Saídas</span></NavLink></div>}</div>}</Fragment>)}</nav>
-      <div className="sidebar-user"><div className="avatar">{user.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="sidebar-user-copy"><strong>{user.name}</strong><span>{user.role === 'admin' ? 'Administrador' : 'Técnico'}</span></div><button onClick={onLogout} aria-label="Sair" title="Sair"><LogOut /></button></div>
+      <nav>{navigation.map(([to, label, Icon]) => <Fragment key={to}><NavLink to={to} end={to === '/'} onClick={() => setOpen(false)} title={collapsed ? label : undefined}><Icon /><span>{label}</span></NavLink>{user.role === 'admin' && to === '/catalogo' && <div className={`sidebar-submenu${financeActive ? ' submenu-active' : ''}`}><button type="button" className="sidebar-submenu-trigger" onClick={() => setFinanceExpanded(value => !value)} aria-expanded={financeExpanded} title={collapsed ? 'Financeiro' : undefined}><CircleDollarSign/><span>Financeiro</span><ChevronRight className="submenu-chevron"/></button>{financeExpanded && <div className="sidebar-submenu-items"><NavLink to="/financeiro/caixa" onClick={() => setOpen(false)} title={collapsed ? 'Caixa' : undefined}><Banknote/><span>Caixa</span></NavLink><NavLink to="/financeiro/saidas" onClick={() => setOpen(false)} title={collapsed ? 'Saídas' : undefined}><ReceiptText/><span>Saídas</span></NavLink></div>}</div>}</Fragment>)}</nav>
+      <div className="sidebar-user"><div className="avatar">{user.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</div><div className="sidebar-user-copy"><strong>{user.name}</strong><span>{user.role === 'admin' ? 'Administrador' : user.role === 'technician' ? 'Técnico' : 'Funcionário'}</span></div><button onClick={onLogout} aria-label="Sair" title="Sair"><LogOut /></button></div>
     </aside>
     {open && <button className="overlay" onClick={() => setOpen(false)} aria-label="Fechar menu" />}
     <section className="main-area">
       <header className="topbar"><button className="menu-button" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu /></button><div className="topbar-date"><span>{currentWeekday}</span><strong>{currentDayMonth}</strong></div><div className="topbar-actions"><button onClick={() => setNotice('Você não tem novas notificações.')} aria-label="Notificações"><Bell /></button></div></header>
       {notice && <div className="toast-region"><SystemAlert tone="info" onDismiss={() => setNotice('')}>{notice}</SystemAlert></div>}
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/central" element={<DayCenter />} />
-        <Route path="/agenda" element={<AgendaPageV2 />} />
-        <Route path="/clientes" element={<Customers />} />
-        <Route path="/clientes/:id" element={<CustomerDetail />} />
-        <Route path="/equipamentos" element={<EquipmentPage />} />
-        <Route path="/equipamentos/:id" element={<EquipmentDetail />} />
-        <Route path="/catalogo" element={<CatalogPage />} />
-        <Route path="/financeiro" element={<Navigate to="/financeiro/caixa" replace />} />
-        <Route path="/financeiro/caixa" element={<FinancePage />} />
-        <Route path="/financeiro/saidas" element={<ExpensePage />} />
-        <Route path="/orcamentos" element={<QuotesPage />} />
-        <Route path="/documentos" element={<DocumentsPage />} />
-        <Route path="/operacoes" element={<OperationsPage />} />
-        <Route path="/rotas" element={<RoutesVehiclesPage />} />
-        <Route path="/equipe" element={<TeamPage />} />
-        <Route path="/configuracoes" element={<SettingsPageV2 />} />
-        <Route path="/ordens" element={<Orders />} />
-        <Route path="/ordens/nova" element={<NewOrder />} />
-        <Route path="/ordens/:id" element={<OrderDetail />} />
-        <Route path="/tecnico" element={<TechnicianHome user={user} />} />
-        <Route path="*" element={<ModulePlaceholder />} />
-      </Routes>
+      {user.role === 'employee' ? (
+        <Routes>
+          <Route path="/ponto" element={<EmployeePontoPage user={user} />} />
+          <Route path="*" element={<Navigate to="/ponto" replace />} />
+        </Routes>
+      ) : (
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/central" element={<DayCenter />} />
+          <Route path="/agenda" element={<AgendaPageV2 />} />
+          <Route path="/clientes" element={<Customers />} />
+          <Route path="/clientes/:id" element={<CustomerDetail />} />
+          <Route path="/equipamentos" element={<EquipmentPage />} />
+          <Route path="/equipamentos/:id" element={<EquipmentDetail />} />
+          <Route path="/catalogo" element={<CatalogPage />} />
+          <Route path="/financeiro" element={<Navigate to="/financeiro/caixa" replace />} />
+          <Route path="/financeiro/caixa" element={<FinancePage />} />
+          <Route path="/financeiro/saidas" element={<ExpensePage />} />
+          <Route path="/orcamentos" element={<QuotesPage />} />
+          <Route path="/documentos" element={<DocumentsPage />} />
+          <Route path="/operacoes" element={<OperationsPage />} />
+          <Route path="/rotas" element={<RoutesVehiclesPage />} />
+          <Route path="/equipe" element={<TeamPage />} />
+          <Route path="/configuracoes" element={<SettingsPageV2 />} />
+          <Route path="/ordens" element={<Orders />} />
+          <Route path="/ordens/nova" element={<NewOrder />} />
+          <Route path="/ordens/:id" element={<OrderDetail />} />
+          <Route path="/tecnico" element={<TechnicianHome user={user} />} />
+          <Route path="/ponto" element={<EmployeePontoPage user={user} />} />
+          <Route path="*" element={<ModulePlaceholder />} />
+        </Routes>
+      )}
     </section>
-    <nav className="bottom-nav">{user.role === 'technician' ? <><NavLink to="/tecnico"><Home /><span>Hoje</span></NavLink><NavLink to="/ordens"><ClipboardList /><span>Minhas OS</span></NavLink></> : <><NavLink to="/"><Home /><span>Início</span></NavLink><NavLink to="/central"><CalendarDays /><span>Agenda</span></NavLink><NavLink to="/ordens"><ClipboardList /><span>OS</span></NavLink><NavLink to="/clientes"><Users /><span>Clientes</span></NavLink></>}</nav>
+    <nav className="bottom-nav">
+      {user.role === 'employee' ? (
+        <>
+          <NavLink to="/ponto" className={(!location.search || location.search.includes('tab=ponto')) ? 'active' : ''}>
+            <Clock3 /><span>Ponto</span>
+          </NavLink>
+          <NavLink to="/ponto?tab=calendar" className={location.search.includes('tab=calendar') ? 'active' : ''}>
+            <CalendarDays /><span>Calendário</span>
+          </NavLink>
+          <NavLink to="/ponto?tab=history" className={location.search.includes('tab=history') ? 'active' : ''}>
+            <History /><span>Presenças</span>
+          </NavLink>
+          <button type="button" onClick={onLogout} className="bottom-nav-action" title="Sair da conta">
+            <LogOut /><span>Sair</span>
+          </button>
+        </>
+      ) : user.role === 'technician' ? (
+        <><NavLink to="/tecnico"><Home /><span>Hoje</span></NavLink><NavLink to="/ordens"><ClipboardList /><span>Minhas OS</span></NavLink></>
+      ) : (
+        <><NavLink to="/"><Home /><span>Início</span></NavLink><NavLink to="/central"><CalendarDays /><span>Agenda</span></NavLink><NavLink to="/ordens"><ClipboardList /><span>OS</span></NavLink><NavLink to="/clientes"><Users /><span>Clientes</span></NavLink></>
+      )}
+    </nav>
   </div>
 }
 
@@ -307,6 +337,7 @@ export default function App() {
   }, [])
   const logout = async () => { try { await api.post('/auth/logout') } catch { /* local logout still proceeds */ } localStorage.removeItem('apollo.token'); localStorage.removeItem('apollo.user'); setUser(null) }
   if (!user) return <Login onLogin={setUser} />
+  if (user.role === 'employee' && location.pathname !== '/ponto') return <Navigate to="/ponto" replace />
   if (user.role === 'technician' && location.pathname === '/') return <Navigate to="/tecnico" replace />
   return <Shell user={user} onLogout={logout} />
 }
