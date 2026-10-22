@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { Building2, FileImage, Landmark, MapPin, Palette, Save, Upload } from 'lucide-react'
 import { api } from './api'
-import { Btn, Header, Loader, Notice, useData } from './Modules'
+import { Btn, Header, Loader, Notice, resolveStorageUrl, useData } from './Modules'
 
 export type CompanySettings = {
   id?: number; company_name: string; legal_name?: string; document?: string; state_registration?: string;
@@ -17,12 +17,12 @@ function SettingsSection({ icon, title, description, children }: { icon:ReactNod
 }
 
 function ImageField({ name, label, hint, current, variant }: { name:string; label:string; hint:string; current?:string; variant:'logo'|'header'|'footer' }) {
-  const [preview, setPreview] = useState(current || '')
+  const [preview, setPreview] = useState(current ? resolveStorageUrl(current) : '')
   const change = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) setPreview(URL.createObjectURL(file))
   }
-  return <label className={`branding-upload branding-${variant}`}><span className="branding-preview">{preview ? <img src={preview} alt={`Prévia de ${label.toLowerCase()}`} /> : <FileImage />}</span><span className="branding-copy"><strong>{label}</strong><small>{hint}</small><em><Upload /> Selecionar imagem</em></span><input type="file" name={name} accept="image/png,image/jpeg,image/webp" onChange={change} /></label>
+  return <label className={`branding-upload branding-${variant}`}><span className="branding-preview">{preview ? <img src={preview} alt={`Prévia de ${label.toLowerCase()}`} onError={(e) => { e.currentTarget.style.display = 'none' }} /> : <FileImage />}</span><span className="branding-copy"><strong>{label}</strong><small>{hint}</small><em><Upload /> Selecionar imagem</em></span><input type="file" name={name} accept="image/png,image/jpeg,image/webp" onChange={change} /></label>
 }
 
 export function SettingsPageV2() {

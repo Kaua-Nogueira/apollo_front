@@ -155,7 +155,8 @@ export function EmployeePontoPage({ user }: { user: User }) {
         <div className="ponto-status-tag">
           <span className={`status-indicator ${pontoData?.clock_status ?? 'off'}`} />
           <span>
-            {pontoData?.clock_status === 'working' ? 'Jornada em andamento (Entrada registrada)' :
+            {loading && !pontoData ? 'Carregando status...' :
+             pontoData?.clock_status === 'working' ? 'Jornada em andamento (Entrada registrada)' :
              pontoData?.clock_status === 'completed' ? 'Jornada concluída (Saída registrada)' : 'Sem registros nesta data'}
           </span>
         </div>
@@ -179,14 +180,14 @@ export function EmployeePontoPage({ user }: { user: User }) {
         type="button"
         className={`ponto-big-button ${pontoData?.clock_status === 'working' ? 'is-working' : ''}`}
         onClick={handleSinglePunch}
-        disabled={busy}
+        disabled={busy || (loading && !pontoData)}
         aria-label="Bater ponto na data selecionada"
       >
         <div className="ponto-btn-icon">
           <Clock size={32} />
         </div>
         <div className="ponto-btn-copy">
-          <strong>{busy ? 'Gravando batida...' : (pontoData?.next_action_label ?? 'Bater Ponto')}</strong>
+          <strong>{busy ? 'Gravando batida...' : (loading && !pontoData) ? 'Carregando...' : (pontoData?.next_action_label ?? 'Bater Ponto')}</strong>
           <span>Clique para bater ponto em {selectedDate.split('-').reverse().join('/')}</span>
         </div>
         <Sparkles className="ponto-btn-sparkle" size={24} />
@@ -203,13 +204,13 @@ export function EmployeePontoPage({ user }: { user: User }) {
           <h2>Batidas em {formatShortDate(selectedDate)}</h2>
         </div>
         <span className="ponto-count-badge">
-          {pontoData?.day_entries.length ?? 0} {pontoData?.day_entries.length === 1 ? 'registro' : 'registros'}
+          {pontoData?.day_entries?.length ?? 0} {pontoData?.day_entries?.length === 1 ? 'registro' : 'registros'}
         </span>
       </div>
 
       {loading ? (
         <div className="loading"><span /><span /><span /></div>
-      ) : pontoData?.day_entries.length ? (
+      ) : (pontoData?.day_entries && pontoData.day_entries.length > 0) ? (
         <div className="ponto-timeline">
           {pontoData.day_entries.map((entry, index) => {
             const ev = eventLabels[entry.type] ?? { label: entry.type, icon: Clock, color: '#475569' }
@@ -279,7 +280,7 @@ export function EmployeePontoPage({ user }: { user: User }) {
             if (!item) {
               return <div key={`empty-${idx}`} className="calendar-day empty-day" />
             }
-            const hasPonto = pontoData?.dates_with_entries.includes(item.dayStr)
+            const hasPonto = Boolean(pontoData?.dates_with_entries?.includes(item.dayStr))
             const isSelected = item.dayStr === selectedDate
             const isToday = item.dayStr === todayStr
 
@@ -326,11 +327,11 @@ export function EmployeePontoPage({ user }: { user: User }) {
         <div className="ponto-stats-grid">
           <div className="stat-box">
             <span className="stat-label">Dias Presentes</span>
-            <strong className="stat-value">{pontoData?.month_stats.days_worked ?? 0}</strong>
+            <strong className="stat-value">{pontoData?.month_stats?.days_worked ?? 0}</strong>
           </div>
           <div className="stat-box">
             <span className="stat-label">Total de Batidas</span>
-            <strong className="stat-value">{pontoData?.month_stats.total_entries ?? 0}</strong>
+            <strong className="stat-value">{pontoData?.month_stats?.total_entries ?? 0}</strong>
           </div>
         </div>
       </section>
@@ -344,7 +345,9 @@ export function EmployeePontoPage({ user }: { user: User }) {
           <span className="ponto-month-tag">Últimos dias</span>
         </div>
 
-        {pontoData?.recent_history.length ? (
+        {loading ? (
+          <div className="loading"><span /><span /><span /></div>
+        ) : (pontoData?.recent_history && pontoData.recent_history.length > 0) ? (
           <div className="ponto-history-list">
             {pontoData.recent_history.map(item => {
               const isSelected = item.date === selectedDate

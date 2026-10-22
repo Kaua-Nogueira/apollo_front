@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from 'r
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   AirVent, ArrowRight, Banknote, Bell, Box, CalendarDays, Check, ChevronRight, CircleDollarSign,
-  ClipboardList, Clock3, Gauge, History, Home, LogOut, MapPin, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, ReceiptText, Search,
+  ClipboardList, Clock3, Gauge, History, Home, LogOut, MapPin, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, Printer, ReceiptText, Search,
   Settings, ShieldCheck, Sparkles, Trash2, UserRound, Users, Wrench, X,
 } from 'lucide-react'
 import { api, ApiError } from './api'
@@ -59,11 +59,20 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const navigate = useNavigate()
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError('')
     try {
       const result = await api.post<{ token: string; user: User }>('/auth/login', { email, password })
-      localStorage.setItem('apollo.token', result.token); localStorage.setItem('apollo.user', JSON.stringify(result.user)); onLogin(result.user)
+      localStorage.setItem('apollo.token', result.token); localStorage.setItem('apollo.user', JSON.stringify(result.user))
+      if (result.user.role === 'employee') {
+        navigate('/ponto', { replace: true })
+      } else if (result.user.role === 'technician') {
+        navigate('/tecnico', { replace: true })
+      } else {
+        navigate('/', { replace: true })
+      }
+      onLogin(result.user)
     } catch (e) { setError(e instanceof ApiError ? e.message : 'Não foi possível entrar.') } finally { setBusy(false) }
   }
   return <main className="login-page">
@@ -120,7 +129,7 @@ function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
         </Routes>
       ) : (
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={user.role === 'technician' ? <Navigate to="/tecnico" replace /> : <Dashboard />} />
           <Route path="/central" element={<DayCenter />} />
           <Route path="/agenda" element={<AgendaPageV2 />} />
           <Route path="/clientes" element={<Customers />} />
@@ -246,7 +255,10 @@ function Orders() {
   return <main className="content orders-page"><PageHeader eyebrow="NÚCLEO OPERACIONAL" title="Ordens de serviço"><Button className="orders-create-button" onClick={() => setCreating(true)}><Plus /> Nova OS</Button></PageHeader>
     <section className="order-summary-strip"><article><span>Total de ordens</span><strong>{filtered.length}</strong><small>no filtro atual</small></article><article className="summary-active"><span>Em operação</span><strong>{active}</strong><small>exigem acompanhamento</small></article><article className="summary-completed"><span>Concluídas</span><strong>{completed}</strong><small>serviços finalizados</small></article><article className="summary-balance"><span>Saldo em aberto</span><strong>{money(openBalance)}</strong><small>a receber</small></article></section>
     <div className="filters order-filters"><label className="search"><Search /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por OS ou cliente" /></label><select value={status} onChange={e => setStatus(e.target.value)}><option value="">Todos os status</option>{Object.entries(statusLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-    {error && <SystemAlert>{error}</SystemAlert>}{loading ? <Loading /> : <section className="panel table-panel orders-table-panel"><div className="data-table"><div className="table-head orders-table-grid"><span>OS / Cliente</span><span>Agendado</span><span>Técnico</span><span>Status</span><span>Total</span><span>Saldo</span><span></span></div>{filtered.map(order => <NavLink to={`/ordens/${order.id}`} className="table-row orders-table-grid order-list-row" key={order.id}><div><strong>{order.number}</strong><small>{order.customer.name}</small></div><span>{dateTime(order.scheduled_at)}</span><span>{order.technician?.name ?? 'Sem técnico'}</span><StatusBadge status={order.status} /><strong>{money(order.total)}</strong><strong className={order.balance > 0 ? 'text-warn' : 'text-ok'}>{order.balance > 0 ? money(order.balance) : 'Quitado'}</strong><ChevronRight className="order-list-arrow" /></NavLink>)}</div>{!filtered.length && <Empty title="Nenhuma ordem encontrada" text="Crie uma OS ou altere os filtros." />}</section>}{creating && <NewOrderForm onClose={() => setCreating(false)} />}</main>
+    {error && <SystemAlert>{error}</SystemAlert>}{loading ? <Loading /> : <section className="panel table-panel orders-table-panel"><div className="data-table"><div className="table-head orders-table-grid"><span>OS / Cliente</span><span>Agendado</span><span>Técnico</span><span>Status</span><span>Total</span><span>Saldo</span><span></span></div>{filtered.map(order => {
+      const hasReceipt = order.documents?.some(d => d.type === 'receipt')
+      return <NavLink to={`/ordens/${order.id}`} className="table-row orders-table-grid order-list-row" key={order.id}><div><strong>{order.number}</strong><small>{order.customer.name}</small></div><span>{dateTime(order.scheduled_at)}</span><span>{order.technician?.name ?? 'Sem técnico'}</span><div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}><StatusBadge status={order.status} />{hasReceipt && <span className="pill ok" style={{ fontSize: '0.68rem', padding: '1px 6px', fontWeight: 700 }} title="Recibo emitido">Recibo</span>}</div><strong>{money(order.total)}</strong><strong className={order.balance > 0 ? 'text-warn' : 'text-ok'}>{order.balance > 0 ? money(order.balance) : 'Quitado'}</strong><ChevronRight className="order-list-arrow" /></NavLink>
+    })}</div>{!filtered.length && <Empty title="Nenhuma ordem encontrada" text="Crie uma OS ou altere os filtros." />}</section>}{creating && <NewOrderForm onClose={() => setCreating(false)} />}</main>
 }
 
 function NewOrderForm({ onClose, standalone = false }: { onClose: () => void; standalone?: boolean }) {
@@ -280,11 +292,49 @@ function NewOrder() {
 }
 
 function OrderDetail() {
-  const { id } = useParams(); const navigate = useNavigate(); const { data: order, loading, error, reload } = useRemote<WorkOrder | null>(`/work-orders/${id}`, null); const { data: services } = useRemote<Array<{ id: number; name: string; default_price: number }>>('/services', []); const { data: products } = useRemote<Array<{ id: number; name: string; sale_price: number; stock: number }>>('/products', []); const [busy, setBusy] = useState(false); const [modal, setModal] = useState<'notes' | 'item' | 'payment' | 'photo' | null>(null); const [formError, setFormError] = useState(''); const [confirmDelete, setConfirmDelete] = useState(false); const [itemToRemove, setItemToRemove] = useState<{id:number;type:'service'|'product';name:string}|null>(null); const [removeError, setRemoveError] = useState('')
+  const { id } = useParams(); const navigate = useNavigate(); const { data: order, loading, error, reload } = useRemote<WorkOrder | null>(`/work-orders/${id}`, null); const { data: services } = useRemote<Array<{ id: number; name: string; default_price: number }>>('/services', []); const { data: products } = useRemote<Array<{ id: number; name: string; sale_price: number; stock: number }>>('/products', []); const [busy, setBusy] = useState(false); const [modal, setModal] = useState<'notes' | 'item' | 'payment' | 'photo' | 'receipt' | null>(null); const [formError, setFormError] = useState(''); const [receiptNotice, setReceiptNotice] = useState<{ number: string; id: number } | null>(null); const [confirmDelete, setConfirmDelete] = useState(false); const [itemToRemove, setItemToRemove] = useState<{id:number;type:'service'|'product';name:string}|null>(null); const [removeError, setRemoveError] = useState('')
   const transition = async (action: string) => { setBusy(true); try { await api.post(`/work-orders/${id}/transition`, { action }); await reload() } finally { setBusy(false) } }
   const saveNotes = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setFormError(''); try { await api.put(`/work-orders/${id}`, Object.fromEntries(new FormData(event.currentTarget))); setModal(null); await reload() } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível salvar.') } finally { setBusy(false) } }
   const addItem = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setFormError(''); const form = new FormData(event.currentTarget); const type = String(form.get('type')); try { await api.post(`/work-orders/${id}/${type === 'service' ? 'services' : 'products'}`, { [`${type}_id`]: Number(form.get('item_id')), quantity: Number(form.get('quantity')), unit_price: Number(form.get('unit_price')), discount: Number(form.get('discount') || 0) }); setModal(null); await reload() } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível adicionar o item.') } finally { setBusy(false) } }
   const registerPayment = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setFormError(''); try { const form = new FormData(event.currentTarget); await api.post(`/work-orders/${id}/payments`, { amount: Number(form.get('amount')), method: form.get('method'), paid_at: form.get('paid_at') || undefined, notes: form.get('notes') || undefined }); setModal(null); await reload() } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível registrar o pagamento.') } finally { setBusy(false) } }
+  const generateReceiptAutomatic = async () => {
+    if (!id || busy) return
+    setBusy(true)
+    setFormError('')
+    try {
+      const res = await api.post<{ message: string; data: { id: number; number: string } }>(
+        `/work-orders/${id}/generate-receipt`,
+        { register_payment: true }
+      )
+      navigate(`/documentos?doc_id=${res.data.id}`)
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Não foi possível gerar o recibo.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const generateReceipt = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setFormError('')
+    try {
+      const form = new FormData(event.currentTarget)
+      const res = await api.post<{ message: string; data: { id: number; number: string } }>(
+        `/work-orders/${id}/generate-receipt`,
+        {
+          amount: Number(form.get('amount')),
+          payment_method: form.get('payment_method'),
+          issued_at: form.get('issued_at') || undefined,
+          notes: form.get('notes') || undefined,
+          register_payment: form.get('register_payment') === 'on'
+        }
+      )
+      setModal(null)
+      navigate(`/documentos?doc_id=${res.data.id}`)
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Não foi possível gerar o recibo.')
+    } finally {
+      setBusy(false)
+    }
+  }
   const uploadPhoto = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setFormError(''); try { const form = new FormData(event.currentTarget); await api.upload(`/work-orders/${id}/attachments`, form); setModal(null); await reload() } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível enviar a foto.') } finally { setBusy(false) } }
   const deleteOrder = async () => { if (!id) return; setBusy(true); setFormError(''); try { await api.delete(`/work-orders/${id}`); navigate('/ordens') } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível excluir a OS.') } finally { setBusy(false) } }
   const removeOrderItem = async () => { if (!id || !itemToRemove) return; setBusy(true); setRemoveError(''); try { await api.delete(`/work-orders/${id}/${itemToRemove.type==='service'?'services':'products'}/${itemToRemove.id}`); setItemToRemove(null); await reload() } catch (e) { setRemoveError(e instanceof Error ? e.message : 'Não foi possível remover o item.') } finally { setBusy(false) } }
@@ -297,16 +347,79 @@ function OrderDetail() {
   const workflowStatus: Status = order.status === 'confirmed' ? 'scheduled' : order.status === 'awaiting_approval' ? 'in_service' : order.status
   const workflowIndex = workflow.findIndex(step => step.status === workflowStatus)
   const orderItems = [...(order.services ?? []).map(item => ({ ...item, itemType:'service' as const })), ...(order.products ?? []).map(item => ({ ...item, itemType:'product' as const }))]
-  return <main className="content order-detail-page"><button className="back-link" onClick={() => navigate(-1)}>← Voltar para ordens</button><PageHeader eyebrow={order.number} title={order.customer.name}><div className="order-header-actions"><StatusBadge status={order.status} /><Button kind="danger" onClick={() => { setFormError(''); setConfirmDelete(true) }}><Trash2 /> Excluir OS</Button></div></PageHeader>
+  const paymentLabels: Record<string, string> = { pix:'PIX', cash:'Dinheiro', credit_card:'Cartão de crédito', debit_card:'Cartão de débito', transfer:'Transferência', bank_slip:'Boleto', other:'Outro' }
+  const receiptAmountDefault = order.received > 0 ? (order.balance === 0 ? order.total : order.received) : order.total
+  return <main className="content order-detail-page"><button className="back-link" onClick={() => navigate(-1)}>← Voltar para ordens</button><PageHeader eyebrow={order.number} title={order.customer.name}><div className="order-header-actions"><StatusBadge status={order.status} />{order.documents?.some(d => d.type === 'receipt') ? <NavLink to={`/documentos?doc_id=${order.documents.find(d => d.type === 'receipt')!.id}`} className="button button-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Abrir recibo emitido"><Printer size={16} /> Recibo {order.documents.find(d => d.type === 'receipt')!.number}</NavLink> : <Button kind="secondary" disabled={busy} onClick={generateReceiptAutomatic} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Gera o recibo automaticamente com todos os itens desta OS e abre direto"><ReceiptText size={16} /> {busy ? 'Gerando...' : 'Gerar Recibo'}</Button>}<Button kind="danger" onClick={() => { setFormError(''); setConfirmDelete(true) }}><Trash2 /> Excluir OS</Button></div></PageHeader>
+    {receiptNotice && <div className="system-alert system-alert-success" style={{ marginBottom: 14 }}><Check /><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}><span>Recibo <strong>{receiptNotice.number}</strong> gerado com sucesso!</span><NavLink to={`/documentos?doc_id=${receiptNotice.id}`} className="button button-secondary" style={{ minHeight: 28, padding: '0 10px', fontSize: '0.76rem' }}><Printer size={14} /> Abrir Recibo</NavLink></div><button type="button" onClick={() => setReceiptNotice(null)}>✕</button></div>}
     <section className={`order-progress ${order.status === 'cancelled' ? 'is-cancelled' : ''}`}>{order.status === 'cancelled' ? <div className="cancelled-progress"><X /> Ordem cancelada</div> : workflow.map((step, index) => <div className={index < workflowIndex ? 'done' : index === workflowIndex ? 'current' : ''} key={step.status}><span>{index < workflowIndex ? <Check /> : index + 1}</span><small>{step.label}</small></div>)}</section>
     <section className="order-layout"><div className="order-main"><article className="panel detail-hero"><div><p>Atendimento</p><h2>{order.problem_reported || 'Atendimento técnico'}</h2><span><MapPin /> {address}</span><div className="contact-row"><a href={`tel:${order.customer.phone}`}>Ligar</a>{whatsapp && <a href={`https://wa.me/${whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">WhatsApp</a>}<a href={mapUrl} target="_blank" rel="noreferrer">Abrir no mapa</a></div></div>{next[order.status] && <Button className="big-action" disabled={busy} onClick={() => transition(next[order.status]![0])}>{next[order.status]![1]} <ArrowRight /></Button>}</article>
       <article className="panel"><div className="panel-title"><h2>Diagnóstico e execução</h2><Button kind="ghost" onClick={() => setModal('notes')}>Editar</Button></div><div className="detail-grid"><div><span>Problema relatado</span><p>{order.problem_reported || 'Não informado'}</p></div><div><span>Diagnóstico técnico</span><p>{order.diagnosis || 'Aguardando preenchimento'}</p></div><div><span>Solução realizada</span><p>{order.solution || 'Aguardando preenchimento'}</p></div><div><span>Recomendações</span><p>{order.recommendations || 'Nenhuma recomendação'}</p></div></div></article>
       <article className="panel"><div className="panel-title"><h2>Itens da OS</h2><Button kind="secondary" onClick={() => { setFormError(''); setModal('item') }}><Plus /> Adicionar item</Button></div><div className="items-table">{orderItems.map(item => <div key={`${item.itemType}-${item.id}`}><span>{item.quantity}×</span><strong>{item.name}<small>{item.itemType==='service'?'Serviço':'Produto'}</small></strong><span>{money(item.unit_price)}</span><b>{money(item.total)}</b><button type="button" className="item-remove-button" onClick={() => { setRemoveError(''); setItemToRemove({id:item.id,type:item.itemType,name:item.name}) }} aria-label={`Remover ${item.name}`} title="Remover item"><Trash2/></button></div>)}{!orderItems.length && <Empty title="Nenhum item" text="Adicione serviços e produtos utilizados." />}</div><div className="total-row"><span>Total da ordem</span><strong>{money(order.total)}</strong></div></article>
       <article className="panel"><div className="panel-title"><h2>Fotos do atendimento</h2><Button kind="ghost" onClick={() => setModal('photo')}><Plus /> Enviar foto</Button></div><div className="attachment-list">{order.attachments?.length ? order.attachments.map(file => <div key={file.id}><span>{file.category}</span><a href={`/storage/${file.path}`} target="_blank" rel="noreferrer">Abrir foto</a></div>) : <p className="muted panel-padding">Registre fotos antes, durante ou depois do serviço.</p>}</div></article></div>
-      <aside className="order-aside"><article className="panel"><h2>Resumo</h2><dl><div><dt>Técnico</dt><dd>{order.technician?.name ?? 'Não atribuído'}</dd></div><div><dt>Agendado</dt><dd>{dateTime(order.scheduled_at)}</dd></div><div><dt>Recebido</dt><dd className="text-ok">{money(order.received)}</dd></div><div><dt>Saldo</dt><dd className="text-warn">{money(order.balance)}</dd></div></dl>{order.balance > 0 && <Button className="full" onClick={() => setModal('payment')}><Banknote /> Registrar pagamento</Button>}</article><article className="panel"><div className="panel-title"><h2>Linha do tempo</h2><History /></div><div className="history-list">{order.status_history?.map(event => <div key={event.id}><span className={`history-dot line-${event.to_status}`} /><div><strong>{statusLabels[event.to_status]}</strong><small>{dateTime(event.occurred_at)}</small></div></div>)}</div></article></aside></section>
+      <aside className="order-aside">
+        <article className="panel"><h2>Resumo</h2><dl><div><dt>Técnico</dt><dd>{order.technician?.name ?? 'Não atribuído'}</dd></div><div><dt>Agendado</dt><dd>{dateTime(order.scheduled_at)}</dd></div><div><dt>Recebido</dt><dd className="text-ok">{money(order.received)}</dd></div><div><dt>Saldo</dt><dd className="text-warn">{money(order.balance)}</dd></div></dl>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {order.balance > 0 && <Button className="full" onClick={() => setModal('payment')}><Banknote /> Registrar pagamento</Button>}
+            <Button className="full" disabled={busy} onClick={generateReceiptAutomatic} style={{ background: '#0f766e', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }} title="Gera o recibo com todos os serviços e produtos desta OS e redireciona automaticamente para o documento"><ReceiptText size={18} /> {busy ? 'Gerando Recibo...' : 'Gerar Recibo Automático'}</Button>
+            <Button className="full" kind="ghost" onClick={() => { setFormError(''); setModal('receipt'); }} style={{ fontSize: '0.8rem', padding: '6px 10px' }}>Personalizar recibo antes de emitir</Button>
+          </div>
+        </article>
+        {order.documents && order.documents.filter(d => d.type === 'receipt').length > 0 && (
+          <article className="panel">
+            <div className="panel-title"><h2>Recibos emitidos</h2><ReceiptText /></div>
+            <div className="history-list">
+              {order.documents.filter(d => d.type === 'receipt').map(rec => (
+                <div key={rec.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #edf1f3' }}>
+                  <div>
+                    <strong>{rec.number}</strong>
+                    <small style={{ display: 'block', color: 'var(--muted)', fontSize: '0.72rem' }}>
+                      {rec.issued_at.slice(0, 10).split('-').reverse().join('/')} · {paymentLabels[rec.payment_method || 'pix']}
+                    </small>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <strong style={{ fontSize: '0.85rem' }}>{money(rec.total)}</strong>
+                    <NavLink to={`/documentos?doc_id=${rec.id}`} className="button button-secondary" style={{ minHeight: 30, padding: '0 10px', fontSize: '0.74rem', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Visualizar e imprimir recibo">
+                      <Printer size={14} /> Ver Recibo
+                    </NavLink>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
+        )}
+        {order.documents && order.documents.filter(d => d.type === 'quote').length > 0 && (
+          <article className="panel">
+            <div className="panel-title"><h2>Orçamento de origem</h2><Banknote /></div>
+            {order.documents.filter(d => d.type === 'quote').map(q => (
+              <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0' }}>
+                <div>
+                  <strong>{q.number}</strong>
+                  <small style={{ display: 'block', color: '#166534', fontWeight: 700, fontSize: '0.72rem' }}>Aprovado · {money(q.total)}</small>
+                </div>
+                <NavLink to={`/documentos?doc_id=${q.id}`} className="button button-ghost" style={{ minHeight: 30, padding: '0 8px', fontSize: '0.74rem' }}>
+                  Ver Orçamento
+                </NavLink>
+              </div>
+            ))}
+          </article>
+        )}
+        <article className="panel"><div className="panel-title"><h2>Linha do tempo</h2><History /></div><div className="history-list">{order.status_history?.map(event => <div key={event.id}><span className={`history-dot line-${event.to_status}`} /><div><strong>{statusLabels[event.to_status]}</strong><small>{dateTime(event.occurred_at)}</small></div></div>)}</div></article>
+      </aside></section>
     {modal === 'notes' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={saveNotes}><div className="modal-header"><h2>Diagnóstico e execução</h2><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><div className="form-grid"><label className="span-2">Diagnóstico<textarea name="diagnosis" defaultValue={order.diagnosis} rows={3} /></label><label className="span-2">Solução realizada<textarea name="solution" defaultValue={order.solution} rows={3} /></label><label className="span-2">Recomendações<textarea name="recommendations" defaultValue={order.recommendations} rows={2} /></label><label className="span-2">Observações internas<textarea name="notes" defaultValue={order.notes} rows={2} /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>Salvar</Button></div></form></div>}
     {modal === 'item' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={addItem}><div className="modal-header"><h2>Adicionar item</h2><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><ItemFields services={services} products={products} />{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>Adicionar</Button></div></form></div>}
     {modal === 'payment' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={registerPayment}><div className="modal-header"><h2>Registrar pagamento</h2><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><div className="form-grid"><label>Valor<input name="amount" required type="number" min="0.01" max={order.balance} step="0.01" defaultValue={order.balance} /></label><label>Forma<select name="method"><option value="pix">PIX</option><option value="cash">Dinheiro</option><option value="credit_card">Cartão de crédito</option><option value="debit_card">Cartão de débito</option><option value="transfer">Transferência</option><option value="bank_slip">Boleto</option></select></label><label>Data<input name="paid_at" type="datetime-local" /></label><label className="span-2">Observação<input name="notes" /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>Confirmar</Button></div></form></div>}
+    {modal === 'receipt' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={generateReceipt}><div className="modal-header"><div className="modal-heading"><span className="modal-symbol"><ReceiptText /></span><div><p className="eyebrow">COMPROVANTE DE PAGAMENTO</p><h2>Gerar Recibo para {order.number}</h2></div></div><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><div className="form-grid">
+      <div className="span-2" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px' }}>
+        <strong style={{ display: 'block', fontSize: '0.82rem', marginBottom: 6, color: '#334155' }}>Itens da OS incluídos no recibo ({orderItems.length}):</strong>
+        {orderItems.length > 0 ? (
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.8rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {orderItems.map(item => <li key={`${item.itemType}-${item.id}`}><span>{item.quantity}× <strong>{item.name}</strong> ({item.itemType === 'service' ? 'Serviço' : 'Produto'}) — {money(item.total)}</span></li>)}
+          </ul>
+        ) : (
+          <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>OS sem itens discriminados. O recibo usará a descrição do atendimento.</p>
+        )}
+      </div>
+      <label>Valor do Recibo<input name="amount" required type="number" min="0.01" step="0.01" defaultValue={receiptAmountDefault} /></label><label>Forma de Pagamento<select name="payment_method" defaultValue={order.payments?.[order.payments.length - 1]?.method || 'pix'}><option value="pix">PIX</option><option value="cash">Dinheiro</option><option value="credit_card">Cartão de crédito</option><option value="debit_card">Cartão de débito</option><option value="transfer">Transferência bancária</option><option value="bank_slip">Boleto</option><option value="other">Outro</option></select></label><label>Data de Emissão<input name="issued_at" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>{order.balance > 0 && <label className="checkbox-field span-2" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}><input type="checkbox" name="register_payment" defaultChecked style={{ width: 'auto' }} /><span>Registrar como pagamento recebido na OS (Saldo em aberto: {money(order.balance)})</span></label>}<label className="span-2">Observações / Declaração<textarea name="notes" rows={2} defaultValue={`Recebemos de ${order.customer.name} o valor referente aos serviços prestados na Ordem de Serviço ${order.number}.`} /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}><ReceiptText /> Emitir e Abrir Recibo</Button></div></form></div>}
     {modal === 'photo' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={uploadPhoto}><div className="modal-header"><h2>Adicionar foto</h2><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><div className="form-grid"><label>Categoria<select name="category"><option value="before">Antes do serviço</option><option value="during">Durante o serviço</option><option value="after">Depois do serviço</option><option value="equipment">Equipamento</option><option value="problem">Problema</option><option value="other">Outro</option></select></label><label>Imagem<input name="photo" type="file" accept="image/*" required /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>Enviar foto</Button></div></form></div>}
     {confirmDelete && <ConfirmDialog title="Excluir esta ordem de serviço?" confirmLabel="Excluir OS" busy={busy} onClose={() => setConfirmDelete(false)} onConfirm={() => void deleteOrder()}><p>A conta a receber vinculada será removida junto com a OS. Se houver qualquer pagamento registrado, a exclusão será bloqueada para preservar o histórico financeiro.</p>{formError?<SystemAlert>{formError}</SystemAlert>:<SystemAlert tone="info">Essa ação arquiva a ordem e não pode ser desfeita pela tela atual.</SystemAlert>}</ConfirmDialog>}
     {itemToRemove && <ConfirmDialog title="Remover item da OS?" confirmLabel="Remover item" busy={busy} onClose={() => setItemToRemove(null)} onConfirm={() => void removeOrderItem()}><p>Confirma a remoção de <strong>{itemToRemove.name}</strong> desta ordem?</p>{itemToRemove.type==='product'&&<SystemAlert tone="info">A quantidade removida será devolvida ao estoque e registrada no histórico.</SystemAlert>}{removeError&&<SystemAlert>{removeError}</SystemAlert>}</ConfirmDialog>}
@@ -337,8 +450,6 @@ export default function App() {
   }, [])
   const logout = async () => { try { await api.post('/auth/logout') } catch { /* local logout still proceeds */ } localStorage.removeItem('apollo.token'); localStorage.removeItem('apollo.user'); setUser(null) }
   if (!user) return <Login onLogin={setUser} />
-  if (user.role === 'employee' && location.pathname !== '/ponto') return <Navigate to="/ponto" replace />
-  if (user.role === 'technician' && location.pathname === '/') return <Navigate to="/tecnico" replace />
   return <Shell user={user} onLogout={logout} />
 }
 

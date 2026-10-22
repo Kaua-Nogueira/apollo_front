@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
-import { AirVent, Banknote, Box, CalendarDays, Car, Check, ChevronRight, MapPin, MessageCircle, Package, Pencil, Plus, ReceiptText, Route as RouteIcon, ShieldCheck, Trash2, Users, Wrench, X } from 'lucide-react'
+import { AirVent, AlertTriangle, Banknote, Box, CalendarDays, Car, Check, CheckCircle2, ChevronRight, Clock, LogIn, LogOut, MapPin, MessageCircle, Package, Pencil, Plus, ReceiptText, Route as RouteIcon, Search, ShieldCheck, Timer, Trash2, Users, Wrench, X } from 'lucide-react'
 import { api } from './api'
 import { SystemAlert } from './SystemAlert'
 import { CustomerFormFields } from './CustomerFormFields'
@@ -8,6 +8,11 @@ import type { Customer, Employee } from './types'
 
 const cash = (value: number | string = 0) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value))
 const shortDate = (value?: string) => value ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value)) : '—'
+
+export function resolveStorageUrl(url?: string | null): string {
+  if (!url) return ''
+  return url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/storage\//, '/storage/')
+}
 
 export function useData<T>(path: string, initial: T) {
   const [data, setData] = useState<T>(initial); const [loading, setLoading] = useState(true); const [error, setError] = useState('')
@@ -60,7 +65,7 @@ function CustomerAddressForm({ busy, message, onSubmit, onCancel }: { busy: bool
 
 type Equipment = { id:number; customer_id:number; location:string; type:string; brand?:string; model?:string; btus?:number; voltage?:string; serial_number?:string; refrigerant_gas?:string; maintenance_interval_months?:number; next_maintenance_at?:string; active:boolean; customer?:Customer; address?:{id:number;label:string;district:string;city:string}; work_orders?:Array<{id:number;number:string;scheduled_at:string;status:string;solution?:string}> }
 type CatalogItem = { id:number; name:string; category?:string|null; description?:string|null; default_price?:number; estimated_cost?:number; average_minutes?:number; cost_price?:number; sale_price?:number; stock?:number; minimum_stock?:number; unit?:string; brand?:string|null; code?:string|null; active:boolean }
-type Entry = { id:number; type:string; occurred_at:string; employee?:Employee; adjusted?:boolean; notes?:string }
+type Entry = { id:number; type:string; occurred_at:string; employee?:Employee; employee_id?:number; work_date?:string; adjusted?:boolean; notes?:string|null }
 
 export function CustomerDetail() {
   const { id } = useParams()
@@ -142,7 +147,749 @@ export function CatalogPage(){
   </main>
 }
 
-export function TeamPage(){const {data:employees,reload:reloadEmployees}=useData<Employee[]>('/employees',[]);const {data:entries}=useData<Entry[]>('/time-entries',[]);const [tab,setTab]=useState<'team'|'time'>('team');const [modal,setModal]=useState(false);const submit=async(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const f=new FormData(e.currentTarget);await api.post('/employees',Object.fromEntries(f));setModal(false);await reloadEmployees()};return <main className="content"><Header eyebrow="OPERAÇÃO INTERNA" title="Equipe e ponto">{tab==='team'&&<Btn onClick={()=>setModal(true)}><Plus/> Novo colaborador</Btn>}</Header><nav className="tabs"><button className={tab==='team'?'active':''} onClick={()=>setTab('team')}>Colaboradores</button><button className={tab==='time'?'active':''} onClick={()=>setTab('time')}>Ponto e jornada</button></nav>{tab==='team'?<section className="team-grid">{employees.map(e=><article className="panel team-card" key={e.id}><span className="avatar">{e.name?.[0]||'T'}</span><div><strong>{e.name}</strong><p>{e.specialty||(e.user?.role==='employee'?'Funcionário':'Técnico de campo')}</p><small>{e.phone||'Sem telefone'}</small></div><div style={{display:'flex',gap:6,alignItems:'center'}}><span className={`pill ${e.user?.role==='employee'?'warn':e.user?.role==='admin'?'ok':''}`}>{e.user?.role==='employee'?'Funcionário':e.user?.role==='admin'?'Admin':'Técnico'}</span><span className={e.active?'pill ok':'pill'}>{e.active?'Ativo':'Inativo'}</span></div></article>)}</section>:<section className="panel table-panel"><div className="data-table"><div className="table-head time-grid"><span>Funcionário</span><span>Evento</span><span>Horário</span><span>Ajuste</span></div>{entries.map(entry=><div className="table-row time-grid" key={entry.id}><strong>{entry.employee?.name}</strong><span>{({clock_in:'Entrada',break_start:'Intervalo',break_end:'Retorno',clock_out:'Saída'} as Record<string,string>)[entry.type]||entry.type}</span><span>{new Date(entry.occurred_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span><span>{entry.adjusted?'Ajustado':'—'}</span></div>)}</div></section>}{modal&&<Modal title="Novo colaborador" onClose={()=>setModal(false)}><form onSubmit={submit}><div className="form-grid"><label>Nome<input name="name" required/></label><label>E-mail<input name="email" type="email" required/></label><label>Perfil de acesso<select name="role" defaultValue="employee"><option value="employee">Funcionário (Apenas controle de ponto)</option><option value="technician">Técnico (Agenda e ordens de serviço)</option><option value="admin">Administrador (Acesso total)</option></select></label><label>Telefone<input name="phone"/></label><label>Cargo / Especialidade<input name="specialty" placeholder="Ex: Auxiliar operacional, Atendente..."/></label><label>Admissão<input name="hired_at" type="date"/></label><label>Senha inicial<input name="password" type="password" defaultValue="password"/></label></div><div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(false)}>Cancelar</Btn><Btn>Criar colaborador</Btn></div></form></Modal>}</main>}
+interface DailyShift {
+  id: string
+  employeeId: number
+  employeeName: string
+  employeeSpecialty: string
+  employeeRole: string
+  employeeAvatar: string
+  date: string
+  dateLabel: string
+  weekdayLabel: string
+  isToday: boolean
+  isYesterday: boolean
+  firstClockIn?: Entry
+  lastClockOut?: Entry
+  allEntries: Entry[]
+  durationMinutes: number
+  durationFormatted: string
+  isOngoing: boolean
+  status: 'working' | 'completed' | 'incomplete'
+  hasAdjustments: boolean
+}
+
+function PontoJornadaSection({
+  entries,
+  employees,
+  reloadEntries,
+  loading,
+}: {
+  entries: Entry[]
+  employees: Employee[]
+  reloadEntries: () => Promise<void>
+  loading?: boolean
+}) {
+  const todayStr = useMemo(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }, [])
+
+  const yesterdayStr = useMemo(() => {
+    const d = new Date(Date.now() - 86400000)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }, [])
+
+  // Filters
+  const [dateFilter, setDateFilter] = useState<string>('')
+  const [employeeFilter, setEmployeeFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'working' | 'completed' | 'incomplete'>('all')
+  const [search, setSearch] = useState<string>('')
+
+  // Detail & Adjustment Modal
+  const [selectedShift, setSelectedShift] = useState<DailyShift | null>(null)
+  const [adjustingEntryId, setAdjustingEntryId] = useState<number | null>(null)
+  const [adjustDatetime, setAdjustDatetime] = useState<string>('')
+  const [adjustReason, setAdjustReason] = useState<string>('')
+  const [adjustBusy, setAdjustBusy] = useState(false)
+  const [adjustMessage, setAdjustMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // 1. Group entries by employee + date (One line per employee per day)
+  const shifts: DailyShift[] = useMemo(() => {
+    const map = new Map<string, Entry[]>()
+    const empMap = new Map<number, Employee>()
+    for (const emp of employees) {
+      empMap.set(emp.id, emp)
+    }
+
+    for (const entry of entries) {
+      const empId = entry.employee_id || entry.employee?.id
+      if (!empId) continue
+
+      let dateStr = ''
+      if (entry.work_date && typeof entry.work_date === 'string') {
+        dateStr = entry.work_date.slice(0, 10)
+      } else if (entry.occurred_at && typeof entry.occurred_at === 'string') {
+        const dt = new Date(entry.occurred_at)
+        if (!isNaN(dt.getTime())) {
+          dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+        }
+      }
+      if (!dateStr) continue
+
+      const key = `${empId}_${dateStr}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(entry)
+    }
+
+    const result: DailyShift[] = []
+
+    for (const [key, shiftEntries] of map.entries()) {
+      const [empIdStr, dateStr] = key.split('_')
+      const empId = Number(empIdStr)
+      const emp = empMap.get(empId) || shiftEntries[0]?.employee
+
+      // Sort chronologically
+      const sorted = [...shiftEntries].sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime())
+
+      const firstClockIn = sorted.find(e => e.type === 'clock_in') ?? (sorted[0]?.type !== 'clock_out' ? sorted[0] : undefined)
+      const clockOuts = sorted.filter(e => e.type === 'clock_out')
+      const lastClockOut = clockOuts.length ? clockOuts[clockOuts.length - 1] : undefined
+
+      // Duration calculation (pairwise clock_in -> clock_out)
+      let totalMinutes = 0
+      let activeIn: number | null = null
+      let isOngoing = false
+
+      for (const e of sorted) {
+        const t = new Date(e.occurred_at).getTime()
+        if (isNaN(t)) continue
+        if (e.type === 'clock_in') {
+          activeIn = t
+        } else if (e.type === 'clock_out') {
+          if (activeIn !== null) {
+            totalMinutes += Math.max(0, Math.round((t - activeIn) / 60000))
+            activeIn = null
+          }
+        }
+      }
+
+      if (activeIn !== null && dateStr === todayStr) {
+        const now = Date.now()
+        if (now > activeIn) {
+          totalMinutes += Math.round((now - activeIn) / 60000)
+          isOngoing = true
+        }
+      }
+
+      const hours = Math.floor(totalMinutes / 60)
+      const mins = totalMinutes % 60
+      const durationFormatted = `${hours}h ${String(mins).padStart(2, '0')}m`
+
+      // Status
+      let status: 'working' | 'completed' | 'incomplete' = 'completed'
+      const lastPunch = sorted[sorted.length - 1]
+      if (lastPunch.type === 'clock_in') {
+        status = dateStr === todayStr ? 'working' : 'incomplete'
+      } else if (!lastClockOut) {
+        status = dateStr === todayStr ? 'working' : 'incomplete'
+      } else {
+        status = 'completed'
+      }
+
+      // Date info
+      const [y, m, d] = dateStr.split('-').map(Number)
+      const dt = new Date(y, m - 1, d)
+      const weekday = new Intl.DateTimeFormat('pt-BR', { weekday: 'short' }).format(dt).toUpperCase().replace('.', '')
+      const label = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(dt)
+      const isToday = dateStr === todayStr
+      const isYesterday = dateStr === yesterdayStr
+
+      const empName = emp?.name || 'Colaborador'
+      const empRole = emp?.user?.role === 'employee' ? 'Funcionário' : emp?.user?.role === 'admin' ? 'Administrador' : 'Técnico'
+      const empSpecialty = emp?.specialty || empRole
+
+      result.push({
+        id: key,
+        employeeId: empId,
+        employeeName: empName,
+        employeeSpecialty: empSpecialty,
+        employeeRole: empRole,
+        employeeAvatar: empName[0] || 'C',
+        date: dateStr,
+        dateLabel: label,
+        weekdayLabel: weekday,
+        isToday,
+        isYesterday,
+        firstClockIn,
+        lastClockOut,
+        allEntries: sorted,
+        durationMinutes: totalMinutes,
+        durationFormatted,
+        isOngoing,
+        status,
+        hasAdjustments: sorted.some(e => Boolean(e.adjusted)),
+      })
+    }
+
+    // Sort by date DESC, then employeeName ASC
+    return result.sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date)
+      return a.employeeName.localeCompare(b.employeeName)
+    })
+  }, [entries, employees, todayStr, yesterdayStr])
+
+  // Filtered shifts
+  const filteredShifts = shifts.filter(s => {
+    if (dateFilter && s.date !== dateFilter) return false
+    if (employeeFilter !== 'all' && String(s.employeeId) !== employeeFilter) return false
+    if (statusFilter !== 'all' && s.status !== statusFilter) return false
+    if (search) {
+      const term = search.toLowerCase()
+      const matchName = s.employeeName.toLowerCase().includes(term)
+      const matchRole = s.employeeSpecialty.toLowerCase().includes(term)
+      if (!matchName && !matchRole) return false
+    }
+    return true
+  })
+
+  // Metrics
+  const uniqueEmployees = new Set(filteredShifts.map(s => s.employeeId)).size
+  const workingCount = filteredShifts.filter(s => s.status === 'working').length
+  const completedCount = filteredShifts.filter(s => s.status === 'completed').length
+  const totalMinutesAll = filteredShifts.reduce((acc, s) => acc + s.durationMinutes, 0)
+  const totalHoursFormatted = `${Math.floor(totalMinutesAll / 60)}h ${String(totalMinutesAll % 60).padStart(2, '0')}m`
+
+  const formatTimeOnly = (iso?: string) => {
+    if (!iso) return '—'
+    const dt = new Date(iso)
+    if (isNaN(dt.getTime())) return '—'
+    return dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  const formatDateTimeLocal = (iso?: string) => {
+    if (!iso) return ''
+    const dt = new Date(iso)
+    if (isNaN(dt.getTime())) return ''
+    const Y = dt.getFullYear()
+    const M = String(dt.getMonth() + 1).padStart(2, '0')
+    const D = String(dt.getDate()).padStart(2, '0')
+    const h = String(dt.getHours()).padStart(2, '0')
+    const m = String(dt.getMinutes()).padStart(2, '0')
+    return `${Y}-${M}-${D}T${h}:${m}`
+  }
+
+  // Handle Adjustment
+  const handleOpenAdjust = (entry: Entry) => {
+    setAdjustingEntryId(entry.id)
+    setAdjustDatetime(formatDateTimeLocal(entry.occurred_at))
+    setAdjustReason('')
+    setAdjustMessage(null)
+  }
+
+  const handleSaveAdjust = async (entryId: number) => {
+    if (!adjustDatetime) {
+      setAdjustMessage({ type: 'error', text: 'Informe a nova data e horário.' })
+      return
+    }
+    if (!adjustReason.trim()) {
+      setAdjustMessage({ type: 'error', text: 'Informe a justificativa do ajuste.' })
+      return
+    }
+    setAdjustBusy(true)
+    setAdjustMessage(null)
+    try {
+      const occurredAtIso = new Date(adjustDatetime).toISOString()
+      await api.put(`/time-entries/${entryId}/adjust`, {
+        occurred_at: occurredAtIso,
+        reason: adjustReason.trim(),
+      })
+      setAdjustMessage({ type: 'success', text: 'Horário ajustado com sucesso!' })
+      setAdjustingEntryId(null)
+      await reloadEntries()
+    } catch (e) {
+      setAdjustMessage({ type: 'error', text: e instanceof Error ? e.message : 'Falha ao salvar ajuste.' })
+    } finally {
+      setAdjustBusy(false)
+    }
+  }
+
+  return (
+    <section className="jornada-container">
+      {/* Metrics Row */}
+      <div className="jornada-metrics-grid">
+        <article className="jornada-metric-card">
+          <div className="jornada-metric-icon blue"><Users size={22} /></div>
+          <div className="jornada-metric-copy">
+            <span>Colaboradores no filtro</span>
+            <strong>{uniqueEmployees}</strong>
+          </div>
+        </article>
+        <article className="jornada-metric-card">
+          <div className="jornada-metric-icon cyan"><Clock size={22} /></div>
+          <div className="jornada-metric-copy">
+            <span>Jornadas em andamento</span>
+            <strong>{workingCount}</strong>
+          </div>
+        </article>
+        <article className="jornada-metric-card">
+          <div className="jornada-metric-icon green"><CheckCircle2 size={22} /></div>
+          <div className="jornada-metric-copy">
+            <span>Jornadas concluídas</span>
+            <strong>{completedCount}</strong>
+          </div>
+        </article>
+        <article className="jornada-metric-card">
+          <div className="jornada-metric-icon purple"><Timer size={22} /></div>
+          <div className="jornada-metric-copy">
+            <span>Horas apuradas</span>
+            <strong>{totalHoursFormatted}</strong>
+          </div>
+        </article>
+      </div>
+
+      {/* Filters Bar */}
+      <div className="jornada-filter-panel">
+        <div className="jornada-filter-row">
+          <div className="jornada-filter-inputs">
+            <div className="jornada-search-input">
+              <Search size={16} />
+              <input
+                type="text"
+                placeholder="Buscar por colaborador ou cargo..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="jornada-select-input"
+              value={employeeFilter}
+              onChange={e => setEmployeeFilter(e.target.value)}
+            >
+              <option value="all">Todos os colaboradores ({employees.length})</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={String(emp.id)}>{emp.name}</option>
+              ))}
+            </select>
+
+            <select
+              className="jornada-select-input"
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as any)}
+            >
+              <option value="all">Todos os status</option>
+              <option value="working">Em andamento</option>
+              <option value="completed">Concluídos</option>
+              <option value="incomplete">Incompletos (sem saída)</option>
+            </select>
+
+            <input
+              type="date"
+              className="jornada-date-input"
+              value={dateFilter}
+              onChange={e => setDateFilter(e.target.value)}
+              title="Filtrar por data específica"
+            />
+          </div>
+
+          <div className="jornada-quick-dates">
+            <button
+              type="button"
+              className={`jornada-quick-btn ${dateFilter === todayStr ? 'active' : ''}`}
+              onClick={() => setDateFilter(dateFilter === todayStr ? '' : todayStr)}
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
+              className={`jornada-quick-btn ${dateFilter === yesterdayStr ? 'active' : ''}`}
+              onClick={() => setDateFilter(dateFilter === yesterdayStr ? '' : yesterdayStr)}
+            >
+              Ontem
+            </button>
+            {dateFilter && (
+              <button
+                type="button"
+                className="jornada-quick-btn"
+                onClick={() => setDateFilter('')}
+                title="Limpar filtro de data"
+              >
+                Todas as datas ✕
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Shifts Table - 1 line per employee per day */}
+      <div className="jornada-table-panel">
+        <div className="jornada-table-head">
+          <span>Colaborador</span>
+          <span>Data</span>
+          <span>Entrada</span>
+          <span>Saída</span>
+          <span>Carga Horária</span>
+          <span>Batidas do dia</span>
+          <span>Status</span>
+          <span></span>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: 48, textAlign: 'center' }}><Loader /></div>
+        ) : filteredShifts.length > 0 ? (
+          filteredShifts.map(shift => (
+            <div
+              className="jornada-table-row"
+              key={shift.id}
+              onClick={() => setSelectedShift(shift)}
+              style={{ cursor: 'pointer' }}
+              title="Clique para ver os detalhes e ajustar batidas"
+            >
+              {/* Employee */}
+              <div className="jornada-col-employee">
+                <span className="jornada-avatar">{shift.employeeAvatar}</span>
+                <div className="jornada-emp-meta">
+                  <strong>{shift.employeeName}</strong>
+                  <span>{shift.employeeSpecialty}</span>
+                </div>
+              </div>
+
+              {/* Date */}
+              <div className="jornada-col-date">
+                <strong>{shift.dateLabel}</strong>
+                <small>
+                  {shift.weekdayLabel}
+                  {shift.isToday && <span className="pill ok" style={{ marginLeft: 6, padding: '1px 5px', fontSize: '0.62rem' }}>Hoje</span>}
+                  {shift.isYesterday && <span className="pill" style={{ marginLeft: 6, padding: '1px 5px', fontSize: '0.62rem' }}>Ontem</span>}
+                </small>
+              </div>
+
+              {/* Entrada */}
+              <div>
+                {shift.firstClockIn ? (
+                  <span className="jornada-time-pill in" title={`Entrada registrada às ${formatTimeOnly(shift.firstClockIn.occurred_at)}`}>
+                    <LogIn size={13} /> {formatTimeOnly(shift.firstClockIn.occurred_at)}
+                  </span>
+                ) : (
+                  <span className="jornada-time-pill missing">Sem registro</span>
+                )}
+              </div>
+
+              {/* Saída */}
+              <div>
+                {shift.lastClockOut ? (
+                  <span className="jornada-time-pill out" title={`Saída registrada às ${formatTimeOnly(shift.lastClockOut.occurred_at)}`}>
+                    <LogOut size={13} /> {formatTimeOnly(shift.lastClockOut.occurred_at)}
+                  </span>
+                ) : shift.status === 'working' ? (
+                  <span className="jornada-time-pill working">
+                    <span className="pulse-dot" /> Em andamento
+                  </span>
+                ) : (
+                  <span className="jornada-time-pill missing" title="Não houve registro de saída">
+                    <AlertTriangle size={13} /> Sem saída
+                  </span>
+                )}
+              </div>
+
+              {/* Horas */}
+              <div className="jornada-hours-box">
+                <strong>{shift.durationFormatted}</strong>
+                {shift.isOngoing && <small>acumulado</small>}
+              </div>
+
+              {/* Batidas Sequence */}
+              <div>
+                <div className="jornada-punches-strip">
+                  {shift.allEntries.map((e, idx) => (
+                    <span
+                      key={e.id ?? idx}
+                      className={`punch-step-pill ${e.type === 'clock_in' ? 'in' : 'out'}`}
+                      title={`${e.type === 'clock_in' ? 'Entrada' : 'Saída'}: ${formatTimeOnly(e.occurred_at)}`}
+                    >
+                      {formatTimeOnly(e.occurred_at)}
+                    </span>
+                  ))}
+                  {shift.hasAdjustments && (
+                    <span className="pill warn" style={{ padding: '1px 5px', fontSize: '0.62rem' }} title="Possui batida ajustada manualmente">
+                      Ajustado
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Status */}
+              <div>
+                {shift.status === 'completed' && <span className="pill ok"><Check size={11} style={{ marginRight: 3 }} /> Concluído</span>}
+                {shift.status === 'working' && <span className="pill info"><Clock size={11} style={{ marginRight: 3 }} /> Em andamento</span>}
+                {shift.status === 'incomplete' && <span className="pill warn"><AlertTriangle size={11} style={{ marginRight: 3 }} /> Incompleto</span>}
+              </div>
+
+              {/* Action */}
+              <div style={{ textAlign: 'right' }}>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={e => {
+                    e.stopPropagation()
+                    setSelectedShift(shift)
+                  }}
+                  title="Ver detalhes da jornada e ajustar"
+                >
+                  <Pencil size={15} />
+                </button>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div style={{ padding: 48, textAlign: 'center' }}>
+            <Clock size={36} color="var(--muted)" style={{ margin: '0 auto 12px' }} />
+            <h3 style={{ margin: '0 0 6px', color: 'var(--navy)' }}>Nenhuma jornada encontrada</h3>
+            <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.85rem' }}>
+              Tente alterar a data ou remover os filtros para visualizar os registros de ponto.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Mobile Cards View */}
+      <div className="jornada-mobile-cards">
+        {filteredShifts.map(shift => (
+          <article className="jornada-card-item" key={shift.id} onClick={() => setSelectedShift(shift)}>
+            <div className="jornada-card-head">
+              <div className="jornada-col-employee">
+                <span className="jornada-avatar">{shift.employeeAvatar}</span>
+                <div className="jornada-emp-meta">
+                  <strong>{shift.employeeName}</strong>
+                  <span>{shift.employeeSpecialty}</span>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <strong style={{ display: 'block', fontSize: '0.88rem', color: 'var(--navy)' }}>{shift.dateLabel}</strong>
+                <small style={{ color: 'var(--muted)', fontWeight: 700 }}>{shift.weekdayLabel}</small>
+              </div>
+            </div>
+
+            <div className="jornada-card-times">
+              <div className="jornada-card-time-box">
+                <span>Entrada</span>
+                {shift.firstClockIn ? (
+                  <strong style={{ color: '#166534', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <LogIn size={14} /> {formatTimeOnly(shift.firstClockIn.occurred_at)}
+                  </strong>
+                ) : (
+                  <span style={{ color: 'var(--muted)' }}>—</span>
+                )}
+              </div>
+              <div className="jornada-card-time-box">
+                <span>Saída</span>
+                {shift.lastClockOut ? (
+                  <strong style={{ color: '#991b1b', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <LogOut size={14} /> {formatTimeOnly(shift.lastClockOut.occurred_at)}
+                  </strong>
+                ) : shift.status === 'working' ? (
+                  <strong style={{ color: '#15803d', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span className="pulse-dot" /> Trabalhando
+                  </strong>
+                ) : (
+                  <strong style={{ color: '#b45309', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <AlertTriangle size={14} /> Sem saída
+                  </strong>
+                )}
+              </div>
+            </div>
+
+            <div className="jornada-card-footer">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <strong>{shift.durationFormatted}</strong>
+                {shift.status === 'completed' && <span className="pill ok">Concluído</span>}
+                {shift.status === 'working' && <span className="pill info">Em andamento</span>}
+                {shift.status === 'incomplete' && <span className="pill warn">Incompleto</span>}
+              </div>
+              <Btn kind="ghost" style={{ padding: '4px 10px', fontSize: '0.78rem' }}>Detalhes →</Btn>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {/* Shift Detail & Adjust Modal */}
+      {selectedShift && (
+        <Modal
+          title={`Jornada: ${selectedShift.employeeName} · ${selectedShift.dateLabel}`}
+          onClose={() => {
+            setSelectedShift(null)
+            setAdjustingEntryId(null)
+            setAdjustMessage(null)
+          }}
+        >
+          <div>
+            <div className="jornada-modal-hero">
+              <div className="jornada-modal-hero-item">
+                <span>Colaborador</span>
+                <strong>{selectedShift.employeeName}</strong>
+              </div>
+              <div className="jornada-modal-hero-item">
+                <span>Data</span>
+                <strong>{selectedShift.dateLabel} ({selectedShift.weekdayLabel})</strong>
+              </div>
+              <div className="jornada-modal-hero-item">
+                <span>Carga Horária</span>
+                <strong>{selectedShift.durationFormatted}</strong>
+              </div>
+              <div className="jornada-modal-hero-item">
+                <span>Status</span>
+                <strong>
+                  {selectedShift.status === 'completed' ? 'Concluída' : selectedShift.status === 'working' ? 'Em andamento' : 'Incompleta'}
+                </strong>
+              </div>
+            </div>
+
+            {adjustMessage && (
+              <div style={{ marginBottom: 16 }}>
+                <Notice text={adjustMessage.text} tone={adjustMessage.type === 'success' ? 'success' : 'error'} />
+              </div>
+            )}
+
+            <div style={{ marginBottom: 10 }}>
+              <h3 style={{ fontSize: '0.92rem', color: 'var(--navy)', margin: '0 0 4px' }}>Batidas registradas nesta jornada</h3>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--muted)' }}>
+                Se necessário, clique em "Ajustar" para corrigir um horário esquecido ou incorreto.
+              </p>
+            </div>
+
+            <div className="jornada-punches-list">
+              {selectedShift.allEntries.map((entry, index) => {
+                const isEntryIn = entry.type === 'clock_in'
+                const isBeingAdjusted = adjustingEntryId === entry.id
+
+                return (
+                  <div key={entry.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div className="jornada-punch-card">
+                      <div className="jornada-punch-left">
+                        <div className={`jornada-punch-node ${isEntryIn ? 'in' : 'out'}`}>
+                          {isEntryIn ? <LogIn size={17} /> : <LogOut size={17} />}
+                        </div>
+                        <div className="jornada-punch-info">
+                          <strong>
+                            {index + 1}ª Batida: {isEntryIn ? 'Entrada' : 'Saída'} — {formatTimeOnly(entry.occurred_at)}
+                            {entry.adjusted && (
+                              <span className="pill warn" style={{ marginLeft: 8, padding: '2px 6px', fontSize: '0.65rem' }}>
+                                Ajustado manual
+                              </span>
+                            )}
+                          </strong>
+                          <small>
+                            Data/Hora: {new Date(entry.occurred_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            {entry.notes ? ` · ${entry.notes}` : ''}
+                          </small>
+                        </div>
+                      </div>
+
+                      <Btn
+                        kind="ghost"
+                        style={{ padding: '6px 12px', fontSize: '0.78rem' }}
+                        onClick={() => handleOpenAdjust(entry)}
+                      >
+                        <Pencil size={13} style={{ marginRight: 4 }} /> Ajustar
+                      </Btn>
+                    </div>
+
+                    {isBeingAdjusted && (
+                      <div className="jornada-adjust-form">
+                        <strong style={{ fontSize: '0.82rem', color: '#854d0e' }}>
+                          Ajustar horário desta batida ({isEntryIn ? 'Entrada' : 'Saída'})
+                        </strong>
+                        <div className="form-grid">
+                          <label>
+                            Nova Data e Horário
+                            <input
+                              type="datetime-local"
+                              required
+                              value={adjustDatetime}
+                              onChange={e => setAdjustDatetime(e.target.value)}
+                            />
+                          </label>
+                          <label>
+                            Motivo do ajuste (obrigatório)
+                            <input
+                              type="text"
+                              required
+                              placeholder="Ex: Esqueceu de bater, ajuste de 10 min..."
+                              value={adjustReason}
+                              onChange={e => setAdjustReason(e.target.value)}
+                            />
+                          </label>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <Btn kind="ghost" type="button" onClick={() => setAdjustingEntryId(null)}>
+                            Cancelar
+                          </Btn>
+                          <Btn disabled={adjustBusy} onClick={() => void handleSaveAdjust(entry.id)}>
+                            {adjustBusy ? 'Salvando...' : 'Confirmar Ajuste'}
+                          </Btn>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="modal-actions">
+              <Btn kind="ghost" type="button" onClick={() => setSelectedShift(null)}>
+                Fechar
+              </Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </section>
+  )
+}
+
+export function TeamPage(){
+  const {data:employees,reload:reloadEmployees}=useData<Employee[]>('/employees',[]);
+  const {data:entries,reload:reloadEntries,loading:entriesLoading}=useData<Entry[]>('/time-entries',[]);
+  const [tab,setTab]=useState<'team'|'time'>('team');
+  const [modal,setModal]=useState(false);
+  const submit=async(e:FormEvent<HTMLFormElement>)=>{
+    e.preventDefault();
+    const f=new FormData(e.currentTarget);
+    await api.post('/employees',Object.fromEntries(f));
+    setModal(false);
+    await reloadEmployees()
+  };
+  return (
+    <main className="content">
+      <Header eyebrow="OPERAÇÃO INTERNA" title="Equipe e ponto">
+        {tab==='team'&&<Btn onClick={()=>setModal(true)}><Plus/> Novo colaborador</Btn>}
+      </Header>
+      <nav className="tabs">
+        <button className={tab==='team'?'active':''} onClick={()=>setTab('team')}>Colaboradores</button>
+        <button className={tab==='time'?'active':''} onClick={()=>setTab('time')}>Ponto e jornada</button>
+      </nav>
+      {tab==='team' ? (
+        <section className="team-grid">
+          {employees.map(e=>(
+            <article className="panel team-card" key={e.id}>
+              <span className="avatar">{e.name?.[0]||'T'}</span>
+              <div>
+                <strong>{e.name}</strong>
+                <p>{e.specialty||(e.user?.role==='employee'?'Funcionário':'Técnico de campo')}</p>
+                <small>{e.phone||'Sem telefone'}</small>
+              </div>
+              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                <span className={`pill ${e.user?.role==='employee'?'warn':e.user?.role==='admin'?'ok':''}`}>
+                  {e.user?.role==='employee'?'Funcionário':e.user?.role==='admin'?'Admin':'Técnico'}
+                </span>
+                <span className={e.active?'pill ok':'pill'}>{e.active?'Ativo':'Inativo'}</span>
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : (
+        <PontoJornadaSection
+          entries={entries}
+          employees={employees}
+          reloadEntries={reloadEntries}
+          loading={entriesLoading}
+        />
+      )}
+      {modal&&<Modal title="Novo colaborador" onClose={()=>setModal(false)}><form onSubmit={submit}><div className="form-grid"><label>Nome<input name="name" required/></label><label>E-mail<input name="email" type="email" required/></label><label>Perfil de acesso<select name="role" defaultValue="employee"><option value="employee">Funcionário (Apenas controle de ponto)</option><option value="technician">Técnico (Agenda e ordens de serviço)</option><option value="admin">Administrador (Acesso total)</option></select></label><label>Telefone<input name="phone"/></label><label>Cargo / Especialidade<input name="specialty" placeholder="Ex: Auxiliar operacional, Atendente..."/></label><label>Admissão<input name="hired_at" type="date"/></label><label>Senha inicial<input name="password" type="password" defaultValue="password"/></label></div><div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(false)}>Cancelar</Btn><Btn>Criar colaborador</Btn></div></form></Modal>}
+    </main>
+  )
+}
 
 
 type CashEntry = { id:string; type:'inflow'|'outflow'; description:string; reference?:string|null; amount:number; method:string; occurred_at:string }
