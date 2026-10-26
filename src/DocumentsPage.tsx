@@ -224,12 +224,13 @@ function printDocument() {
     .preview-totals div { display: flex !important; justify-content: space-between !important; padding: 6px 0 !important; color: #6d8089 !important; font-size: 0.68rem !important; }
     .preview-totals .grand-total { margin-top: 4px !important; padding: 11px 0 0 !important; border-top: 1px solid #dfe8ea !important; color: #153e50 !important; }
     .preview-totals .grand-total strong { font-weight: 800 !important; font-size: 1.02rem !important; }
-    .preview-notes, .receipt-declaration { margin: 12px 25px 0 !important; padding: 13px 15px !important; border-radius: 10px !important; background: #f5f8f9 !important; }
-    .preview-notes p, .receipt-declaration p { margin: 5px 0 0 !important; color: #687d87 !important; font-size: 0.64rem !important; line-height: 1.55 !important; white-space: pre-wrap !important; }
-    .receipt-declaration { margin-top: 17px !important; background: #f8fbfb !important; }
-    .receipt-declaration>div { width: 190px !important; margin: 27px auto 0 !important; text-align: center !important; }
-    .receipt-declaration>div span { display: block !important; border-top: 1px solid #9aabb2 !important; }
-    .receipt-declaration>div small { color: #72858e !important; font-size: 0.58rem !important; }
+    .preview-notes { margin: 12px 25px 0 !important; padding: 13px 15px !important; border-radius: 10px !important; background: #f5f8f9 !important; }
+    .preview-notes p { margin: 5px 0 0 !important; color: #687d87 !important; font-size: 0.64rem !important; line-height: 1.55 !important; white-space: pre-wrap !important; }
+    .receipt-declaration { margin: 18px 25px 0 !important; padding: 10px 0 !important; background: transparent !important; background-color: transparent !important; border: none !important; box-shadow: none !important; }
+    .receipt-declaration p { margin: 0 !important; color: #556872 !important; font-size: 0.66rem !important; line-height: 1.55 !important; white-space: pre-wrap !important; text-align: center !important; }
+    .receipt-declaration>div { width: 240px !important; margin: 35px auto 6px !important; text-align: center !important; }
+    .receipt-declaration>div span { display: block !important; border-top: 1px solid #7c939f !important; }
+    .receipt-declaration>div small { display: block !important; margin-top: 4px !important; color: #435965 !important; font-size: 0.62rem !important; font-weight: 600 !important; }
     .document-preview>footer {
       margin-top: auto !important;
       min-height: 60px !important;

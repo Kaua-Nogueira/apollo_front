@@ -1,13 +1,15 @@
 import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
-  AirVent, ArrowRight, Banknote, Bell, Box, CalendarDays, Check, ChevronRight, CircleDollarSign,
-  ClipboardList, Clock3, Gauge, History, Home, LogOut, MapPin, Menu, Package, PanelLeftClose, PanelLeftOpen, Plus, Printer, ReceiptText, Search,
+  AirVent, ArrowRight, Banknote, Bell, Box, CalendarDays, Camera, Check, ChevronRight, CircleDollarSign,
+  ClipboardCheck, ClipboardList, Clock3, Gauge, History, Home, LogOut, MapPin, Menu, Package,
+  PackagePlus, PanelLeftClose, PanelLeftOpen, Plus, Printer, ReceiptText, Search,
   Settings, ShieldCheck, Sparkles, Trash2, UserRound, Users, Wrench, X,
 } from 'lucide-react'
 import { api, ApiError } from './api'
 import { SystemAlert } from './SystemAlert'
 import { CustomerFormFields } from './CustomerFormFields'
+import { validateRequiredFields } from './validation'
 import type { Appointment, Customer, DashboardData, Employee, Status, User, WorkOrder } from './types'
 import { AgendaPageV2, CatalogPage, CustomerDetail, EquipmentDetail, EquipmentPage, ExpensePage, FinancePage, OperationsPage, QuotesPage, RoutesVehiclesPage, TeamPage } from './Modules'
 import { DocumentsPage } from './DocumentsPage'
@@ -42,7 +44,26 @@ function Empty({ icon = <ClipboardList />, title, text }: { icon?: ReactNode; ti
 function Loading() { return <div className="loading"><span /><span /><span /></div> }
 
 function ConfirmDialog({ title, children, confirmLabel, busy, onClose, onConfirm }: { title: string; children: ReactNode; confirmLabel: string; busy?: boolean; onClose: () => void; onConfirm: () => void }) {
-  return <div className="modal-layer"><button className="modal-backdrop" onClick={onClose} aria-label="Fechar" /><section className="modal confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title"><div className="modal-header"><div className="modal-heading"><span className="modal-symbol confirm-symbol"><Trash2 /></span><div><p className="eyebrow">CONFIRMAÇÃO</p><h2 id="confirm-dialog-title">{title}</h2></div></div><button type="button" className="icon-button" onClick={onClose} aria-label="Fechar"><X /></button></div><div className="confirm-dialog-body">{children}</div><div className="modal-actions"><Button type="button" kind="ghost" onClick={onClose}>Cancelar</Button><Button type="button" kind="danger" disabled={busy} onClick={onConfirm}>{busy ? 'Excluindo...' : confirmLabel}</Button></div></section></div>
+  return <div className="modal-layer">
+    <button className="modal-backdrop" onClick={onClose} aria-label="Fechar" />
+    <section className="modal confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" style={{ maxWidth: 480 }}>
+      <div className="modal-header">
+        <div className="modal-heading">
+          <span className="modal-symbol confirm-symbol"><Trash2 /></span>
+          <div>
+            <p className="eyebrow" style={{ color: '#ef4444' }}>CONFIRMAÇÃO</p>
+            <h2 id="confirm-dialog-title">{title}</h2>
+          </div>
+        </div>
+        <button type="button" className="icon-button" onClick={onClose} aria-label="Fechar"><X /></button>
+      </div>
+      <div className="confirm-dialog-body" style={{ padding: '20px 24px' }}>{children}</div>
+      <div className="modal-actions" style={{ margin: 0 }}>
+        <Button type="button" kind="ghost" onClick={onClose}>Cancelar</Button>
+        <Button type="button" kind="danger" disabled={busy} onClick={onConfirm}>{busy ? 'Processando...' : confirmLabel}</Button>
+      </div>
+    </section>
+  </div>
 }
 
 function useRemote<T>(path: string, initial: T) {
@@ -266,21 +287,68 @@ function NewOrderForm({ onClose, standalone = false }: { onClose: () => void; st
   const { data: customers } = useRemote<Customer[]>('/customers', [])
   const { data: employees } = useRemote<Employee[]>('/employees', [])
   const { data: services } = useRemote<Array<{ id: number; name: string; default_price: number }>>('/services', [])
-  const [customerId, setCustomerId] = useState(''); const [serviceLines, setServiceLines] = useState<Array<{ id: string; quantity: string; price: string }>>([]); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
-  const customer = customers.find(item => item.id === Number(customerId)); const selectedServiceLines = serviceLines.filter(line => line.id); const serviceTotal = selectedServiceLines.reduce((sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.price) || 0), 0)
-  const addServiceLine = () => setServiceLines(lines => [...lines, { id: '', quantity: '1', price: '' }])
-  const updateServiceLine = (index: number, changes: Partial<{ id: string; quantity: string; price: string }>) => setServiceLines(lines => lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...changes } : line))
+  interface ServiceLine { id: string; name?: string; isCustom?: boolean; quantity: string; price: string }
+  const [customerId, setCustomerId] = useState('')
+  const [serviceLines, setServiceLines] = useState<ServiceLine[]>([])
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const customer = customers.find(item => item.id === Number(customerId))
+  const selectedServiceLines = serviceLines.filter(line => line.isCustom ? !!line.name?.trim() : !!line.id)
+  const serviceTotal = selectedServiceLines.reduce((sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.price) || 0), 0)
+  const addServiceLine = (isCustom = false) => setServiceLines(lines => [...lines, { id: isCustom ? '__custom__' : '', name: '', isCustom, quantity: '1', price: '' }])
+  const updateServiceLine = (index: number, changes: Partial<ServiceLine>) => setServiceLines(lines => lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...changes } : line))
   const removeServiceLine = (index: number) => setServiceLines(lines => lines.filter((_, lineIndex) => lineIndex !== index))
-  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setError(''); const fields = new FormData(event.currentTarget)
-    try { const created = await api.post<WorkOrder>('/work-orders', { customer_id: Number(fields.get('customer_id')), address_id: Number(fields.get('address_id')), equipment_id: fields.get('equipment_id') ? Number(fields.get('equipment_id')) : null, technician_id: fields.get('technician_id') ? Number(fields.get('technician_id')) : null, scheduled_at: fields.get('scheduled_at'), problem_reported: fields.get('problem_reported'), notes: fields.get('notes'), services: serviceLines.filter(line => line.id).map(line => ({ service_id: Number(line.id), quantity: Number(line.quantity), unit_price: Number(line.price), discount: 0 })) }); navigate(`/ordens/${created.id}`) } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível criar a OS.') } finally { setBusy(false) }
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    const formEl = event.currentTarget
+    const val = validateRequiredFields(formEl)
+    if (!val.valid) {
+      setError(val.message)
+      return
+    }
+    if (serviceLines.length > 0) {
+      if (serviceLines.some(line => line.isCustom && !line.name?.trim())) {
+        setError('Por favor, informe o nome para todos os serviços novos adicionados ou remova as linhas pendentes.')
+        return
+      }
+      if (serviceLines.some(line => !line.isCustom && !line.id)) {
+        setError('Por favor, selecione o serviço para todas as linhas adicionadas ou remova as linhas pendentes.')
+        return
+      }
+    }
+    setBusy(true)
+    const fields = new FormData(formEl)
+    try {
+      const created = await api.post<WorkOrder>('/work-orders', {
+        customer_id: Number(fields.get('customer_id')),
+        address_id: Number(fields.get('address_id')),
+        equipment_id: fields.get('equipment_id') ? Number(fields.get('equipment_id')) : null,
+        technician_id: fields.get('technician_id') ? Number(fields.get('technician_id')) : null,
+        scheduled_at: fields.get('scheduled_at'),
+        problem_reported: fields.get('problem_reported') || null,
+        notes: fields.get('notes') || null,
+        services: serviceLines.filter(line => line.isCustom ? line.name?.trim() : line.id).map(line => ({
+          ...(line.isCustom ? { name: line.name!.trim() } : { service_id: Number(line.id) }),
+          quantity: Number(line.quantity),
+          unit_price: Number(line.price),
+          discount: 0
+        }))
+      })
+      navigate(`/ordens/${created.id}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível criar a OS.')
+    } finally {
+      setBusy(false)
+    }
   }
-  const form = <form className={`modal order-form-modal ${standalone ? 'order-form-standalone' : ''}`} onSubmit={submit}>
+  const form = <form className={`modal order-form-modal ${standalone ? 'order-form-standalone' : ''}`} onSubmit={submit} noValidate>
     <div className="modal-header order-form-header"><div className="modal-heading"><span className="modal-symbol"><ClipboardList /></span><div><p className="eyebrow">NOVA ORDEM DE SERVIÇO</p><h2>Organize o atendimento</h2><small>Preencha o essencial agora. O restante pode ser atualizado durante o serviço.</small></div></div><button type="button" className="icon-button" onClick={onClose} aria-label="Fechar"><X /></button></div>
     <div className="order-form-progress"><div className="active"><span>1</span><div><strong>Cliente</strong><small>Local e equipamento</small></div></div><i /><div className={customerId ? 'active' : ''}><span>2</span><div><strong>Atendimento</strong><small>Agenda e responsável</small></div></div><i /><div className={customerId && selectedServiceLines.length ? 'active' : ''}><span>3</span><div><strong>Confirmar</strong><small>Revise e crie a OS</small></div></div></div>
     <div className="order-form-layout"><div className="order-form-fields">
-      <section className="order-form-section"><div className="order-section-title"><span><UserRound /></span><div><h3>Cliente e local</h3><p>Vincule a ordem ao cadastro e ao equipamento correto.</p></div></div><div className="form-grid"><label className="span-2">Cliente <em>obrigatório</em><select name="customer_id" required value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">Selecione um cliente</option>{customers.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Endereço<select name="address_id" required disabled={!customer}><option value="">{customer ? 'Selecione o local' : 'Escolha o cliente primeiro'}</option>{customer?.addresses?.map(item => <option value={item.id} key={item.id}>{item.label} · {item.district}</option>)}</select></label><label>Equipamento<select name="equipment_id" disabled={!customer}><option value="">Sem equipamento vinculado</option>{customer?.equipment?.map(item => <option value={item.id} key={item.id}>{item.brand} {item.btus?.toLocaleString('pt-BR')} BTUs · {item.location}</option>)}</select></label></div></section>
-      <section className="order-form-section"><div className="order-section-title"><span><CalendarDays /></span><div><h3>Planejamento do atendimento</h3><p>Defina quando, quem e quais serviços serão executados.</p></div></div><div className="form-grid"><label>Data e hora <em>obrigatório</em><input name="scheduled_at" type="datetime-local" required defaultValue={`${todayInput}T14:00`} /></label><label>Técnico responsável<select name="technician_id"><option value="">Atribuir depois</option>{employees.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><div className="service-selector span-2"><div className="service-selector-head"><label>Serviços iniciais <small>Adicione um ou mais serviços</small></label><button type="button" className="service-add-button" onClick={addServiceLine}><Plus /> Adicionar serviço</button></div>{serviceLines.length ? <div className="service-lines">{serviceLines.map((line, index) => <div className="service-line" key={`${index}-${line.id}`}><select aria-label={`Serviço ${index + 1}`} value={line.id} required onChange={e => { const selected = services.find(item => item.id === Number(e.target.value)); updateServiceLine(index, { id: e.target.value, price: selected ? String(selected.default_price) : '' }) }}><option value="">Selecione o serviço</option>{services.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select><input aria-label={`Quantidade do serviço ${index + 1}`} type="number" min="0.01" step="0.01" value={line.quantity} onChange={e => updateServiceLine(index, { quantity: e.target.value })} /><input aria-label={`Valor do serviço ${index + 1}`} type="number" min="0" step="0.01" value={line.price} placeholder="Valor" onChange={e => updateServiceLine(index, { price: e.target.value })} /><button type="button" className="icon-button service-remove" onClick={() => removeServiceLine(index)} aria-label="Remover serviço"><X /></button></div>)}</div> : <div className="service-empty"><Wrench /> Nenhum serviço adicionado ainda.</div>}</div><label className="span-2">Problema relatado <em>obrigatório</em><textarea name="problem_reported" rows={3} required placeholder="Ex.: equipamento liga, mas não refrigera e apresenta ruído..." /></label><label className="span-2">Observações internas <small>Opcional — visível apenas para a equipe</small><textarea name="notes" rows={2} placeholder="Acesso ao local, contato alternativo ou orientação para o técnico" /></label></div></section>
-    </div><aside className="order-form-summary"><p className="eyebrow">RESUMO DA OS</p><h3>{customer?.name ?? 'Cliente não selecionado'}</h3><div className="order-summary-placeholder"><span><MapPin /></span><p>{customer ? `${customer.addresses?.length ?? 0} local(is) disponível(is)` : 'Escolha um cliente para liberar endereço e equipamento.'}</p></div><dl><div><dt>Serviços iniciais</dt><dd>{selectedServiceLines.length ? `${selectedServiceLines.length} selecionado(s)` : 'A definir'}</dd></div><div><dt>Valor previsto</dt><dd>{selectedServiceLines.length ? money(serviceTotal) : '—'}</dd></div><div><dt>Status inicial</dt><dd><span className="summary-status">Agendada</span></dd></div></dl>{selectedServiceLines.length > 0 && <div className="order-summary-services">{selectedServiceLines.map((line, index) => <span key={`${index}-${line.id}`}>{services.find(item => item.id === Number(line.id))?.name ?? 'Serviço pendente'}</span>)}</div>}<div className="order-summary-tip"><ShieldCheck /><span>A OS será criada com histórico e poderá receber itens, fotos e pagamentos.</span></div></aside></div>
+      <section className="order-form-section"><div className="order-section-title"><span><UserRound /></span><div><h3>Cliente e local</h3><p>Vincule a ordem ao cadastro e ao equipamento correto.</p></div></div><div className="form-grid"><label className="span-2">Cliente <em>obrigatório</em><select name="customer_id" required value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">Selecione um cliente</option>{customers.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Endereço <em>obrigatório</em><select name="address_id" required disabled={!customer}><option value="">{customer ? 'Selecione o local' : 'Escolha o cliente primeiro'}</option>{customer?.addresses?.map(item => <option value={item.id} key={item.id}>{item.label} · {item.district}</option>)}</select></label><label>Equipamento<select name="equipment_id" disabled={!customer}><option value="">Sem equipamento vinculado</option>{customer?.equipment?.map(item => <option value={item.id} key={item.id}>{item.brand} {item.btus?.toLocaleString('pt-BR')} BTUs · {item.location}</option>)}</select></label></div></section>
+      <section className="order-form-section"><div className="order-section-title"><span><CalendarDays /></span><div><h3>Planejamento do atendimento</h3><p>Defina quando, quem e quais serviços serão executados.</p></div></div><div className="form-grid"><label>Data e hora <em>obrigatório</em><input name="scheduled_at" type="datetime-local" required defaultValue={`${todayInput}T14:00`} /></label><label>Técnico responsável<select name="technician_id"><option value="">Atribuir depois</option>{employees.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><div className="service-selector span-2"><div className="service-selector-head"><label>Serviços iniciais <small>Adicione serviços cadastrados ou digite novos serviços avulsos</small></label><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><button type="button" className="service-add-button" onClick={() => addServiceLine(false)}><Plus /> Adicionar serviço</button><button type="button" className="service-add-button secondary" onClick={() => addServiceLine(true)} title="Adicionar serviço novo ou avulso"><Sparkles size={13} /> Novo serviço</button></div></div>{serviceLines.length ? <div className="service-lines">{serviceLines.map((line, index) => <div className="service-line" key={`${index}-${line.id}-${line.isCustom ? 'custom' : 'select'}`}>{line.isCustom ? <div className="custom-service-field"><input aria-label={`Nome do novo serviço ${index + 1}`} type="text" required placeholder="Digite o nome do serviço novo..." value={line.name ?? ''} onChange={e => updateServiceLine(index, { name: e.target.value })} autoFocus /><button type="button" className="service-switch-btn" onClick={() => updateServiceLine(index, { isCustom: false, id: '', name: '', price: '' })} title="Voltar para a lista de serviços cadastrados">↺ Lista</button></div> : <select aria-label={`Serviço ${index + 1}`} value={line.id} required onChange={e => { const val = e.target.value; if (val === '__custom__') { updateServiceLine(index, { isCustom: true, id: '__custom__', name: '', price: '' }); return } const selected = services.find(item => item.id === Number(val)); updateServiceLine(index, { id: val, price: selected ? String(selected.default_price) : '' }) }}><option value="">Selecione o serviço</option>{services.map(item => <option value={item.id} key={item.id}>{item.name} · {money(item.default_price)}</option>)}<option value="__custom__">✨ + Outro serviço (digitar nome novo)...</option></select>}<input aria-label={`Quantidade do serviço ${index + 1}`} type="number" min="0.01" step="0.01" value={line.quantity} placeholder="Qtd" onChange={e => updateServiceLine(index, { quantity: e.target.value })} /><input aria-label={`Valor do serviço ${index + 1}`} type="number" min="0" step="0.01" value={line.price} placeholder="Valor R$" onChange={e => updateServiceLine(index, { price: e.target.value })} required /><button type="button" className="icon-button service-remove" onClick={() => removeServiceLine(index)} aria-label="Remover serviço"><X /></button></div>)}</div> : <div className="service-empty"><Wrench /> Nenhum serviço adicionado ainda. Adicione da lista ou crie um novo serviço.</div>}</div><label className="span-2">Problema relatado <small>Opcional</small><textarea name="problem_reported" rows={3} placeholder="Ex.: equipamento liga, mas não refrigera e apresenta ruído..." /></label><label className="span-2">Observações internas <small>Opcional — visível apenas para a equipe</small><textarea name="notes" rows={2} placeholder="Acesso ao local, contato alternativo ou orientação para o técnico" /></label></div></section>
+    </div><aside className="order-form-summary"><p className="eyebrow">RESUMO DA OS</p><h3>{customer?.name ?? 'Cliente não selecionado'}</h3><div className="order-summary-placeholder"><span><MapPin /></span><p>{customer ? `${customer.addresses?.length ?? 0} local(is) disponível(is)` : 'Escolha um cliente para liberar endereço e equipamento.'}</p></div><dl><div><dt>Serviços iniciais</dt><dd>{selectedServiceLines.length ? `${selectedServiceLines.length} selecionado(s)` : 'A definir'}</dd></div><div><dt>Valor previsto</dt><dd>{selectedServiceLines.length ? money(serviceTotal) : '—'}</dd></div><div><dt>Status inicial</dt><dd><span className="summary-status">Agendada</span></dd></div></dl>{selectedServiceLines.length > 0 && <div className="order-summary-services">{selectedServiceLines.map((line, index) => <span key={`${index}-${line.id || line.name}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{line.isCustom ? (line.name || 'Novo serviço') : (services.find(item => item.id === Number(line.id))?.name ?? 'Serviço pendente')}</span>{line.isCustom && <span className="custom-tag">Novo</span>}</span>)}</div>}<div className="order-summary-tip"><ShieldCheck /><span>A OS será criada com histórico e poderá receber itens, fotos e pagamentos.</span></div></aside></div>
     {error && <div className="order-form-error"><SystemAlert>{error}</SystemAlert></div>}<div className="modal-actions order-form-actions"><Button type="button" kind="ghost" onClick={onClose}>Cancelar</Button><Button disabled={busy}>{busy ? 'Criando ordem...' : 'Criar ordem de serviço'} <ArrowRight /></Button></div>
   </form>
   return standalone ? form : <div className="modal-layer"><button className="modal-backdrop" onClick={onClose} aria-label="Fechar" />{form}</div>
@@ -294,9 +362,69 @@ function NewOrder() {
 function OrderDetail() {
   const { id } = useParams(); const navigate = useNavigate(); const { data: order, loading, error, reload } = useRemote<WorkOrder | null>(`/work-orders/${id}`, null); const { data: services } = useRemote<Array<{ id: number; name: string; default_price: number }>>('/services', []); const { data: products } = useRemote<Array<{ id: number; name: string; sale_price: number; stock: number }>>('/products', []); const [busy, setBusy] = useState(false); const [modal, setModal] = useState<'notes' | 'item' | 'payment' | 'photo' | 'receipt' | null>(null); const [formError, setFormError] = useState(''); const [receiptNotice, setReceiptNotice] = useState<{ number: string; id: number } | null>(null); const [confirmDelete, setConfirmDelete] = useState(false); const [itemToRemove, setItemToRemove] = useState<{id:number;type:'service'|'product';name:string}|null>(null); const [removeError, setRemoveError] = useState('')
   const transition = async (action: string) => { setBusy(true); try { await api.post(`/work-orders/${id}/transition`, { action }); await reload() } finally { setBusy(false) } }
-  const saveNotes = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setFormError(''); try { await api.put(`/work-orders/${id}`, Object.fromEntries(new FormData(event.currentTarget))); setModal(null); await reload() } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível salvar.') } finally { setBusy(false) } }
-  const addItem = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setFormError(''); const form = new FormData(event.currentTarget); const type = String(form.get('type')); try { await api.post(`/work-orders/${id}/${type === 'service' ? 'services' : 'products'}`, { [`${type}_id`]: Number(form.get('item_id')), quantity: Number(form.get('quantity')), unit_price: Number(form.get('unit_price')), discount: Number(form.get('discount') || 0) }); setModal(null); await reload() } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível adicionar o item.') } finally { setBusy(false) } }
-  const registerPayment = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setFormError(''); try { const form = new FormData(event.currentTarget); await api.post(`/work-orders/${id}/payments`, { amount: Number(form.get('amount')), method: form.get('method'), paid_at: form.get('paid_at') || undefined, notes: form.get('notes') || undefined }); setModal(null); await reload() } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível registrar o pagamento.') } finally { setBusy(false) } }
+  const saveNotes = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setFormError('')
+    try {
+      await api.put(`/work-orders/${id}`, Object.fromEntries(new FormData(event.currentTarget)))
+      setModal(null)
+      await reload()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Não foi possível salvar.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const addItem = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setFormError('')
+    const formEl = event.currentTarget
+    const val = validateRequiredFields(formEl)
+    if (!val.valid) { setFormError(val.message); return }
+    setBusy(true)
+    const form = new FormData(formEl)
+    const type = String(form.get('type'))
+    const customName = String(form.get('custom_name') || '').trim()
+    const itemId = form.get('item_id') ? Number(form.get('item_id')) : null
+    try {
+      const payload = type === 'service' && customName
+        ? { name: customName }
+        : { [`${type}_id`]: itemId }
+
+      await api.post(`/work-orders/${id}/${type === 'service' ? 'services' : 'products'}`, {
+        ...payload,
+        quantity: Number(form.get('quantity')),
+        unit_price: Number(form.get('unit_price')),
+        discount: Number(form.get('discount') || 0)
+      })
+      setModal(null)
+      await reload()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Não foi possível adicionar o item.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const registerPayment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setFormError('')
+    const formEl = event.currentTarget
+    const val = validateRequiredFields(formEl)
+    if (!val.valid) { setFormError(val.message); return }
+    setBusy(true)
+    try {
+      const form = new FormData(formEl)
+      await api.post(`/work-orders/${id}/payments`, {
+        amount: Number(form.get('amount')),
+        method: form.get('method'),
+        paid_at: form.get('paid_at') || undefined,
+        notes: form.get('notes') || undefined
+      })
+      setModal(null)
+      await reload()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Não foi possível registrar o pagamento.')
+    } finally {
+      setBusy(false)
+    }
+  }
   const generateReceiptAutomatic = async () => {
     if (!id || busy) return
     setBusy(true)
@@ -314,9 +442,13 @@ function OrderDetail() {
     }
   }
   const generateReceipt = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setBusy(true); setFormError('')
+    event.preventDefault(); setFormError('')
+    const formEl = event.currentTarget
+    const val = validateRequiredFields(formEl)
+    if (!val.valid) { setFormError(val.message); return }
+    setBusy(true)
     try {
-      const form = new FormData(event.currentTarget)
+      const form = new FormData(formEl)
       const res = await api.post<{ message: string; data: { id: number; number: string } }>(
         `/work-orders/${id}/generate-receipt`,
         {
@@ -335,7 +467,23 @@ function OrderDetail() {
       setBusy(false)
     }
   }
-  const uploadPhoto = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setFormError(''); try { const form = new FormData(event.currentTarget); await api.upload(`/work-orders/${id}/attachments`, form); setModal(null); await reload() } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível enviar a foto.') } finally { setBusy(false) } }
+  const uploadPhoto = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setFormError('')
+    const formEl = event.currentTarget
+    const val = validateRequiredFields(formEl)
+    if (!val.valid) { setFormError(val.message); return }
+    setBusy(true)
+    try {
+      const form = new FormData(formEl)
+      await api.upload(`/work-orders/${id}/attachments`, form)
+      setModal(null)
+      await reload()
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Não foi possível enviar a foto.')
+    } finally {
+      setBusy(false)
+    }
+  }
   const deleteOrder = async () => { if (!id) return; setBusy(true); setFormError(''); try { await api.delete(`/work-orders/${id}`); navigate('/ordens') } catch (e) { setFormError(e instanceof Error ? e.message : 'Não foi possível excluir a OS.') } finally { setBusy(false) } }
   const removeOrderItem = async () => { if (!id || !itemToRemove) return; setBusy(true); setRemoveError(''); try { await api.delete(`/work-orders/${id}/${itemToRemove.type==='service'?'services':'products'}/${itemToRemove.id}`); setItemToRemove(null); await reload() } catch (e) { setRemoveError(e instanceof Error ? e.message : 'Não foi possível remover o item.') } finally { setBusy(false) } }
   if (loading) return <main className="content"><Loading /></main>; if (error || !order) return <main className="content"><SystemAlert>{error || 'OS não encontrada'}</SystemAlert></main>
@@ -405,11 +553,11 @@ function OrderDetail() {
         )}
         <article className="panel"><div className="panel-title"><h2>Linha do tempo</h2><History /></div><div className="history-list">{order.status_history?.map(event => <div key={event.id}><span className={`history-dot line-${event.to_status}`} /><div><strong>{statusLabels[event.to_status]}</strong><small>{dateTime(event.occurred_at)}</small></div></div>)}</div></article>
       </aside></section>
-    {modal === 'notes' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={saveNotes}><div className="modal-header"><h2>Diagnóstico e execução</h2><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><div className="form-grid"><label className="span-2">Diagnóstico<textarea name="diagnosis" defaultValue={order.diagnosis} rows={3} /></label><label className="span-2">Solução realizada<textarea name="solution" defaultValue={order.solution} rows={3} /></label><label className="span-2">Recomendações<textarea name="recommendations" defaultValue={order.recommendations} rows={2} /></label><label className="span-2">Observações internas<textarea name="notes" defaultValue={order.notes} rows={2} /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>Salvar</Button></div></form></div>}
-    {modal === 'item' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={addItem}><div className="modal-header"><h2>Adicionar item</h2><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><ItemFields services={services} products={products} />{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>Adicionar</Button></div></form></div>}
-    {modal === 'payment' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={registerPayment}><div className="modal-header"><h2>Registrar pagamento</h2><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><div className="form-grid"><label>Valor<input name="amount" required type="number" min="0.01" max={order.balance} step="0.01" defaultValue={order.balance} /></label><label>Forma<select name="method"><option value="pix">PIX</option><option value="cash">Dinheiro</option><option value="credit_card">Cartão de crédito</option><option value="debit_card">Cartão de débito</option><option value="transfer">Transferência</option><option value="bank_slip">Boleto</option></select></label><label>Data<input name="paid_at" type="datetime-local" /></label><label className="span-2">Observação<input name="notes" /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>Confirmar</Button></div></form></div>}
-    {modal === 'receipt' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={generateReceipt}><div className="modal-header"><div className="modal-heading"><span className="modal-symbol"><ReceiptText /></span><div><p className="eyebrow">COMPROVANTE DE PAGAMENTO</p><h2>Gerar Recibo para {order.number}</h2></div></div><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><div className="form-grid">
-      <div className="span-2" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px' }}>
+    {modal === 'notes' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={saveNotes} noValidate><div className="modal-header"><div className="modal-heading"><span className="modal-symbol"><ClipboardCheck /></span><div><p className="eyebrow">ORDEM DE SERVIÇO {order.number}</p><h2>Diagnóstico e execução</h2><small>Histórico técnico, solução e observações do atendimento</small></div></div><button className="icon-button" type="button" onClick={() => setModal(null)} aria-label="Fechar"><X /></button></div><div className="form-grid"><label className="span-2">Diagnóstico técnico<textarea name="diagnosis" defaultValue={order.diagnosis} rows={3} placeholder="Descreva o que foi identificado no equipamento..." /></label><label className="span-2">Solução realizada<textarea name="solution" defaultValue={order.solution} rows={3} placeholder="Descreva reparos, peças trocadas ou procedimentos realizados..." /></label><label className="span-2">Recomendações ao cliente<textarea name="recommendations" defaultValue={order.recommendations} rows={2} placeholder="Orientações de uso ou data recomendada para próxima preventiva..." /></label><label className="span-2">Observações internas<textarea name="notes" defaultValue={order.notes} rows={2} placeholder="Visível apenas para a equipe interna..." /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>{busy ? 'Salvando...' : 'Salvar alterações'}</Button></div></form></div>}
+    {modal === 'item' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={addItem} noValidate><div className="modal-header"><div className="modal-heading"><span className="modal-symbol"><PackagePlus /></span><div><p className="eyebrow">ITENS DA OS</p><h2>Adicionar item à OS {order.number}</h2><small>Adicione serviços prestados ou peças e insumos aplicados</small></div></div><button className="icon-button" type="button" onClick={() => setModal(null)} aria-label="Fechar"><X /></button></div><ItemFields services={services} products={products} />{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>{busy ? 'Adicionando...' : 'Adicionar item'}</Button></div></form></div>}
+    {modal === 'payment' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={registerPayment} noValidate><div className="modal-header"><div className="modal-heading"><span className="modal-symbol" style={{ background: 'linear-gradient(145deg, #065f46, #059669)', color: '#ecfdf5' }}><Banknote /></span><div><p className="eyebrow" style={{ color: '#059669' }}>RECEBIMENTO</p><h2>Registrar pagamento</h2><small>Saldo pendente nesta OS: <strong>{money(order.balance)}</strong></small></div></div><button className="icon-button" type="button" onClick={() => setModal(null)} aria-label="Fechar"><X /></button></div><div className="form-grid"><label>Valor <em>obrigatório</em><input name="amount" required type="number" min="0.01" max={order.balance} step="0.01" defaultValue={order.balance} /></label><label>Forma de pagamento <em>obrigatório</em><select name="method" required><option value="pix">PIX</option><option value="cash">Dinheiro</option><option value="credit_card">Cartão de crédito</option><option value="debit_card">Cartão de débito</option><option value="transfer">Transferência bancária</option><option value="bank_slip">Boleto</option></select></label><label>Data do pagamento<input name="paid_at" type="datetime-local" /></label><label className="span-2">Observação<input name="notes" placeholder="Ex.: pago via PIX, comprovante anexado..." /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>{busy ? 'Registrando...' : 'Confirmar recebimento'}</Button></div></form></div>}
+    {modal === 'receipt' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={generateReceipt} noValidate><div className="modal-header"><div className="modal-heading"><span className="modal-symbol"><ReceiptText /></span><div><p className="eyebrow">COMPROVANTE DE PAGAMENTO</p><h2>Gerar Recibo para {order.number}</h2><small>Emita o comprovante formal com os itens executados na ordem</small></div></div><button className="icon-button" type="button" onClick={() => setModal(null)} aria-label="Fechar"><X /></button></div><div className="form-grid">
+      <div className="span-2" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 16px' }}>
         <strong style={{ display: 'block', fontSize: '0.82rem', marginBottom: 6, color: '#334155' }}>Itens da OS incluídos no recibo ({orderItems.length}):</strong>
         {orderItems.length > 0 ? (
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.8rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -419,16 +567,113 @@ function OrderDetail() {
           <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>OS sem itens discriminados. O recibo usará a descrição do atendimento.</p>
         )}
       </div>
-      <label>Valor do Recibo<input name="amount" required type="number" min="0.01" step="0.01" defaultValue={receiptAmountDefault} /></label><label>Forma de Pagamento<select name="payment_method" defaultValue={order.payments?.[order.payments.length - 1]?.method || 'pix'}><option value="pix">PIX</option><option value="cash">Dinheiro</option><option value="credit_card">Cartão de crédito</option><option value="debit_card">Cartão de débito</option><option value="transfer">Transferência bancária</option><option value="bank_slip">Boleto</option><option value="other">Outro</option></select></label><label>Data de Emissão<input name="issued_at" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>{order.balance > 0 && <label className="checkbox-field span-2" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}><input type="checkbox" name="register_payment" defaultChecked style={{ width: 'auto' }} /><span>Registrar como pagamento recebido na OS (Saldo em aberto: {money(order.balance)})</span></label>}<label className="span-2">Observações / Declaração<textarea name="notes" rows={2} defaultValue={`Recebemos de ${order.customer.name} o valor referente aos serviços prestados na Ordem de Serviço ${order.number}.`} /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}><ReceiptText /> Emitir e Abrir Recibo</Button></div></form></div>}
-    {modal === 'photo' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={uploadPhoto}><div className="modal-header"><h2>Adicionar foto</h2><button className="icon-button" type="button" onClick={() => setModal(null)}><X /></button></div><div className="form-grid"><label>Categoria<select name="category"><option value="before">Antes do serviço</option><option value="during">Durante o serviço</option><option value="after">Depois do serviço</option><option value="equipment">Equipamento</option><option value="problem">Problema</option><option value="other">Outro</option></select></label><label>Imagem<input name="photo" type="file" accept="image/*" required /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>Enviar foto</Button></div></form></div>}
+      <label>Valor do Recibo <em>obrigatório</em><input name="amount" required type="number" min="0.01" step="0.01" defaultValue={receiptAmountDefault} /></label><label>Forma de Pagamento <em>obrigatório</em><select name="payment_method" defaultValue={order.payments?.[order.payments.length - 1]?.method || 'pix'} required><option value="pix">PIX</option><option value="cash">Dinheiro</option><option value="credit_card">Cartão de crédito</option><option value="debit_card">Cartão de débito</option><option value="transfer">Transferência bancária</option><option value="bank_slip">Boleto</option><option value="other">Outro</option></select></label><label>Data de Emissão <em>obrigatório</em><input name="issued_at" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>{order.balance > 0 && <label className="checkbox-field span-2" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}><input type="checkbox" name="register_payment" defaultChecked style={{ width: 'auto' }} /><span>Registrar como pagamento recebido na OS (Saldo em aberto: {money(order.balance)})</span></label>}<label className="span-2">Observações / Declaração<textarea name="notes" rows={2} defaultValue={`Recebemos de ${order.customer.name} o valor referente aos serviços prestados na Ordem de Serviço ${order.number}.`} /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}><ReceiptText /> Emitir e Abrir Recibo</Button></div></form></div>}
+    {modal === 'photo' && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setModal(null)} aria-label="Fechar" /><form className="modal" onSubmit={uploadPhoto} noValidate><div className="modal-header"><div className="modal-heading"><span className="modal-symbol"><Camera /></span><div><p className="eyebrow">REGISTRO VISUAL</p><h2>Adicionar foto à OS {order.number}</h2><small>Envie fotos de antes, durante ou depois da execução</small></div></div><button className="icon-button" type="button" onClick={() => setModal(null)} aria-label="Fechar"><X /></button></div><div className="form-grid"><label>Categoria <em>obrigatório</em><select name="category" required><option value="before">Antes do serviço</option><option value="during">Durante o serviço</option><option value="after">Depois do serviço</option><option value="equipment">Equipamento</option><option value="problem">Problema</option><option value="other">Outro</option></select></label><label>Arquivo de imagem <em>obrigatório</em><input name="photo" type="file" accept="image/*" required /></label></div>{formError && <SystemAlert>{formError}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setModal(null)}>Cancelar</Button><Button disabled={busy}>{busy ? 'Enviando...' : 'Enviar foto'}</Button></div></form></div>}
     {confirmDelete && <ConfirmDialog title="Excluir esta ordem de serviço?" confirmLabel="Excluir OS" busy={busy} onClose={() => setConfirmDelete(false)} onConfirm={() => void deleteOrder()}><p>A conta a receber vinculada será removida junto com a OS. Se houver qualquer pagamento registrado, a exclusão será bloqueada para preservar o histórico financeiro.</p>{formError?<SystemAlert>{formError}</SystemAlert>:<SystemAlert tone="info">Essa ação arquiva a ordem e não pode ser desfeita pela tela atual.</SystemAlert>}</ConfirmDialog>}
     {itemToRemove && <ConfirmDialog title="Remover item da OS?" confirmLabel="Remover item" busy={busy} onClose={() => setItemToRemove(null)} onConfirm={() => void removeOrderItem()}><p>Confirma a remoção de <strong>{itemToRemove.name}</strong> desta ordem?</p>{itemToRemove.type==='product'&&<SystemAlert tone="info">A quantidade removida será devolvida ao estoque e registrada no histórico.</SystemAlert>}{removeError&&<SystemAlert>{removeError}</SystemAlert>}</ConfirmDialog>}
   </main>
 }
 
 function ItemFields({ services, products }: { services: Array<{ id: number; name: string; default_price: number }>; products: Array<{ id: number; name: string; sale_price: number; stock: number }> }) {
-  const [type, setType] = useState<'service' | 'product'>('service'); const items = type === 'service' ? services : products
-  return <div className="form-grid"><label>Tipo<select name="type" value={type} onChange={e => setType(e.target.value as 'service' | 'product')}><option value="service">Serviço</option><option value="product">Produto</option></select></label><label>Item<select name="item_id" required>{items.map(item => <option key={item.id} value={item.id}>{item.name}{type === 'product' ? ` · estoque ${(item as { stock: number }).stock}` : ''}</option>)}</select></label><label>Quantidade<input name="quantity" type="number" min="0.01" step="0.01" defaultValue="1" required /></label><label>Valor unitário<input name="unit_price" type="number" min="0" step="0.01" defaultValue={items[0] ? (type === 'service' ? (items[0] as { default_price: number }).default_price : (items[0] as { sale_price: number }).sale_price) : 0} required /></label><label>Desconto<input name="discount" type="number" min="0" step="0.01" defaultValue="0" /></label></div>
+  const [type, setType] = useState<'service' | 'product'>('service')
+  const [isCustom, setIsCustom] = useState(false)
+  const [customName, setCustomName] = useState('')
+  const items = type === 'service' ? services : products
+  const [selectedId, setSelectedId] = useState<string>(() => items[0] ? String(items[0].id) : '')
+  const [price, setPrice] = useState<string>(() => {
+    if (!items[0]) return '0'
+    return String(type === 'service' ? (items[0] as { default_price: number }).default_price : (items[0] as { sale_price: number }).sale_price)
+  })
+
+  const handleTypeChange = (newType: 'service' | 'product') => {
+    setType(newType)
+    setIsCustom(false)
+    setCustomName('')
+    const list = newType === 'service' ? services : products
+    if (list[0]) {
+      setSelectedId(String(list[0].id))
+      setPrice(String(newType === 'service' ? (list[0] as { default_price: number }).default_price : (list[0] as { sale_price: number }).sale_price))
+    } else {
+      setSelectedId('')
+      setPrice('0')
+    }
+  }
+
+  const handleItemChange = (itemId: string) => {
+    if (type === 'service' && itemId === '__custom__') {
+      setIsCustom(true)
+      setSelectedId('')
+      setPrice('')
+      return
+    }
+    setSelectedId(itemId)
+    const found = items.find(i => i.id === Number(itemId))
+    if (found) {
+      setPrice(String(type === 'service' ? (found as { default_price: number }).default_price : (found as { sale_price: number }).sale_price))
+    }
+  }
+
+  return <div className="form-grid">
+    <label>Tipo de item <em>obrigatório</em>
+      <select name="type" value={type} onChange={e => handleTypeChange(e.target.value as 'service' | 'product')}>
+        <option value="service">Serviço</option>
+        <option value="product">Produto / Peça</option>
+      </select>
+    </label>
+    {isCustom ? (
+      <label>Nome do novo serviço <em>obrigatório</em>
+        <div className="custom-service-field">
+          <input
+            name="custom_name"
+            type="text"
+            required
+            placeholder="Digite o nome do serviço novo..."
+            value={customName}
+            onChange={e => setCustomName(e.target.value)}
+            autoFocus
+          />
+          <button
+            type="button"
+            className="service-switch-btn"
+            title="Voltar para a lista de serviços cadastrados"
+            onClick={() => {
+              setIsCustom(false)
+              setCustomName('')
+              if (services[0]) {
+                setSelectedId(String(services[0].id))
+                setPrice(String(services[0].default_price))
+              }
+            }}
+          >
+            ↺ Lista
+          </button>
+        </div>
+      </label>
+    ) : (
+      <label>Item <em>obrigatório</em>
+        <select name="item_id" required value={selectedId} onChange={e => handleItemChange(e.target.value)}>
+          <option value="">Selecione o {type === 'service' ? 'serviço' : 'produto'}</option>
+          {items.map(item => (
+            <option key={item.id} value={item.id}>
+              {item.name}{type === 'product' ? ` · estoque ${(item as { stock: number }).stock}` : ''}
+            </option>
+          ))}
+          {type === 'service' && (
+            <option value="__custom__">✨ + Outro serviço (digitar nome novo)...</option>
+          )}
+        </select>
+      </label>
+    )}
+    <label>Quantidade <em>obrigatório</em>
+      <input name="quantity" type="number" min="0.01" step="0.01" defaultValue="1" required />
+    </label>
+    <label>Valor unitário (R$) <em>obrigatório</em>
+      <input name="unit_price" type="number" min="0" step="0.01" value={price} onChange={e => setPrice(e.target.value)} required />
+    </label>
+    <label className="span-2">Desconto (R$)
+      <input name="discount" type="number" min="0" step="0.01" defaultValue="0" placeholder="0,00" />
+    </label>
+  </div>
 }
 
 function TechnicianHome({ user }: { user: User }) {

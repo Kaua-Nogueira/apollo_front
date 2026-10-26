@@ -4,6 +4,7 @@ import { AirVent, AlertTriangle, Banknote, Box, CalendarDays, Car, Check, CheckC
 import { api } from './api'
 import { SystemAlert } from './SystemAlert'
 import { CustomerFormFields } from './CustomerFormFields'
+import { validateRequiredFields } from './validation'
 import type { Customer, Employee } from './types'
 
 const cash = (value: number | string = 0) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value))
@@ -11,7 +12,32 @@ const shortDate = (value?: string) => value ? new Intl.DateTimeFormat('pt-BR', {
 
 export function resolveStorageUrl(url?: string | null): string {
   if (!url) return ''
-  return url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/storage\//, '/storage/')
+
+  // 1. If it's localhost or 127.0.0.1 (local dev), normalize to relative /storage so Vite proxy handles it
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/storage\//i.test(url)) {
+    return url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/storage\//i, '/storage/')
+  }
+
+  // 2. If it's already an absolute URL (e.g. https://api.km5refrigeracoes.com.br/storage/...), keep it
+  if (/^https?:\/\//i.test(url)) {
+    return url
+  }
+
+  // 3. If it's a relative path starting with /storage/:
+  if (url.startsWith('/storage/')) {
+    const apiUrl = import.meta.env.VITE_API_URL
+    if (apiUrl && /^https?:\/\//i.test(apiUrl)) {
+      try {
+        const apiOrigin = new URL(apiUrl).origin
+        return `${apiOrigin}${url}`
+      } catch {
+        // fallback to relative if invalid URL
+      }
+    }
+    return url
+  }
+
+  return url
 }
 
 export function useData<T>(path: string, initial: T) {
@@ -25,7 +51,87 @@ export function Btn({ children, kind = 'primary', ...props }: React.ButtonHTMLAt
 export function Header({ eyebrow, title, children }: { eyebrow?: string; title: string; children?: ReactNode }) { return <div className="page-header"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1></div><div className="page-actions">{children}</div></div> }
 export function Notice({ text, tone = 'error' }: { text: string; tone?: 'error' | 'success' | 'info' }) { return <SystemAlert tone={tone}>{text}</SystemAlert> }
 export function Loader() { return <div className="loading"><span /><span /><span /></div> }
-export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) { return <div className="modal-layer"><button className="modal-backdrop" onClick={onClose} aria-label="Fechar" /><section className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-header"><div className="modal-heading"><span className="modal-symbol" aria-hidden="true">+</span><div><p className="eyebrow">CADASTRO E OPERAÇÃO</p><h2>{title}</h2></div></div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X /></button></div><div className="modal-body">{children}</div></section></div> }
+export function Modal({
+  title,
+  eyebrow,
+  subtitle,
+  icon,
+  children,
+  onClose,
+  maxWidth,
+}: {
+  title: string
+  eyebrow?: string
+  subtitle?: string
+  icon?: ReactNode
+  children: ReactNode
+  onClose: () => void
+  maxWidth?: number | string
+}) {
+  const titleLower = title.toLowerCase()
+  const isDelete = titleLower.includes('excluir') || titleLower.includes('remover') || titleLower.includes('cancelar')
+
+  let displayIcon = icon
+  if (!displayIcon) {
+    if (isDelete) displayIcon = <Trash2 />
+    else if (titleLower.includes('editar')) displayIcon = <Pencil />
+    else if (titleLower.includes('endereço')) displayIcon = <MapPin />
+    else if (titleLower.includes('equipamento')) displayIcon = <AirVent />
+    else if (titleLower.includes('cliente') || titleLower.includes('colaborador')) displayIcon = <Users />
+    else if (titleLower.includes('atendimento') || titleLower.includes('agenda')) displayIcon = <CalendarDays />
+    else if (titleLower.includes('saída') || titleLower.includes('pagamento') || titleLower.includes('receber') || titleLower.includes('caixa')) displayIcon = <Banknote />
+    else if (titleLower.includes('jornada') || titleLower.includes('ponto')) displayIcon = <Clock />
+    else if (titleLower.includes('serviço')) displayIcon = <Wrench />
+    else if (titleLower.includes('produto')) displayIcon = <Package />
+    else displayIcon = <Plus />
+  }
+
+  let displayEyebrow = eyebrow
+  if (!displayEyebrow) {
+    if (isDelete) displayEyebrow = 'CONFIRMAÇÃO / ATENÇÃO'
+    else if (titleLower.includes('editar')) displayEyebrow = 'EDIÇÃO DE DADOS'
+    else if (titleLower.includes('endereço')) displayEyebrow = 'LOCALIZAÇÃO'
+    else if (titleLower.includes('equipamento')) displayEyebrow = 'EQUIPAMENTO TÉCNICO'
+    else if (titleLower.includes('colaborador')) displayEyebrow = 'EQUIPE / RECURSOS HUMANOS'
+    else if (titleLower.includes('cliente')) displayEyebrow = 'RELACIONAMENTO'
+    else if (titleLower.includes('saída') || titleLower.includes('despesa') || titleLower.includes('pagamento')) displayEyebrow = 'FINANCEIRO'
+    else if (titleLower.includes('atendimento') || titleLower.includes('agenda')) displayEyebrow = 'PLANEJAMENTO'
+    else if (titleLower.includes('jornada') || titleLower.includes('ponto')) displayEyebrow = 'CONTROLE DE PONTO'
+    else displayEyebrow = 'CADASTRO E GESTÃO'
+  }
+
+  return (
+    <div className="modal-layer">
+      <button className="modal-backdrop" onClick={onClose} aria-label="Fechar" />
+      <section
+        className={`modal ${isDelete ? 'modal-danger' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        style={maxWidth ? { maxWidth } : undefined}
+      >
+        <div className="modal-header">
+          <div className="modal-heading">
+            <span className={`modal-symbol ${isDelete ? 'danger' : ''}`}>
+              {displayIcon}
+            </span>
+            <div>
+              <p className="eyebrow" style={isDelete ? { color: '#ef4444' } : undefined}>
+                {displayEyebrow}
+              </p>
+              <h2>{title}</h2>
+              {subtitle && <small>{subtitle}</small>}
+            </div>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Fechar" type="button">
+            <X />
+          </button>
+        </div>
+        <div className="modal-body">{children}</div>
+      </section>
+    </div>
+  )
+}
 
 function CustomerAddressForm({ busy, message, onSubmit, onCancel }: { busy: boolean; message: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const [zipCode, setZipCode] = useState('')
@@ -46,7 +152,17 @@ function CustomerAddressForm({ busy, message, onSubmit, onCancel }: { busy: bool
       setZipError(error instanceof Error ? error.message : 'Falha ao consultar o CEP. Preencha o endereço manualmente.')
     } finally { setZipLoading(false) }
   }
-  return <form className="customer-address-form" onSubmit={onSubmit}>
+  const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setZipError('')
+    const val = validateRequiredFields(event.currentTarget)
+    if (!val.valid) {
+      setZipError(val.message)
+      return
+    }
+    onSubmit(event)
+  }
+  return <form className="customer-address-form" onSubmit={handleFormSubmit} noValidate>
     <div className="customer-address-fields">
       <label className="span-2">CEP<input name="zip_code" inputMode="numeric" autoComplete="postal-code" maxLength={9} value={zipCode} onChange={event => { const digits = event.target.value.replace(/\D/g, '').slice(0, 8); setZipCode(digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits) }} onBlur={() => void lookupZip()} placeholder="00000-000" /><small>{zipLoading ? 'Consultando CEP…' : 'Ao sair do campo, buscamos rua, bairro, cidade e estado.'}</small></label>
       <label className="span-2">Nome do endereço <em>obrigatório</em><input name="label" required placeholder="Casa, loja, escritório..." /></label>
@@ -85,13 +201,19 @@ export function CustomerDetail() {
     finally { setBusy(false) }
   }
   const submitEquipment = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); const f = new FormData(e.currentTarget); setBusy(true); setMessage('')
+    e.preventDefault(); setMessage('')
+    const val = validateRequiredFields(e.currentTarget)
+    if (!val.valid) { report(val.message); return }
+    const f = new FormData(e.currentTarget); setBusy(true)
     try { await api.post('/equipment', {...Object.fromEntries(f), customer_id:Number(id), address_id:Number(f.get('address_id')), btus:f.get('btus')?Number(f.get('btus')):null, maintenance_interval_months:f.get('maintenance_interval_months')?Number(f.get('maintenance_interval_months')):null}); setModal(null); report('Equipamento adicionado.', 'success'); await reload() }
     catch (err) { report(err instanceof Error ? err.message : 'Erro ao salvar') }
     finally { setBusy(false) }
   }
   const submitCustomer = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); setBusy(true); setMessage('')
+    e.preventDefault(); setMessage('')
+    const val = validateRequiredFields(e.currentTarget)
+    if (!val.valid) { report(val.message); return }
+    setBusy(true)
     try { await api.put(`/customers/${id}`, Object.fromEntries(new FormData(e.currentTarget))); setModal(null); report('Cadastro do cliente atualizado.', 'success'); await reload() }
     catch (err) { report(err instanceof Error ? err.message : 'Não foi possível atualizar o cliente.') }
     finally { setBusy(false) }
@@ -125,9 +247,32 @@ export function CatalogPage(){
   const beginCreate=()=>{setSelected(null);setMessage('');setModal('create')}
   const showItem=(item:CatalogItem)=>{setSelected(item);setMessage('');setModal('detail')}
   const submit=async(event:FormEvent<HTMLFormElement>)=>{
-    event.preventDefault();const f=new FormData(event.currentTarget);setBusy(true);setMessage('')
+    event.preventDefault(); setMessage('')
+    const val = validateRequiredFields(event.currentTarget)
+    if (!val.valid) { setMessage(val.message); return }
+    const f=new FormData(event.currentTarget); setBusy(true)
     const common={name:String(f.get('name')||'').trim(),category:String(f.get('category')||'').trim()||null,active:f.get('active')==='true'}
-    const payload=tab==='services'?{...common,default_price:Number(f.get('default_price')),estimated_cost:f.get('estimated_cost')?Number(f.get('estimated_cost')):null,average_minutes:f.get('average_minutes')?Number(f.get('average_minutes')):null,description:String(f.get('description')||'').trim()||null}:{...common,unit:String(f.get('unit')||'').trim(),brand:String(f.get('brand')||'').trim()||null,code:String(f.get('code')||'').trim()||null,cost_price:Number(f.get('cost_price')),sale_price:Number(f.get('sale_price')),stock:Number(f.get('stock')),minimum_stock:Number(f.get('minimum_stock'))}
+    const defaultPriceVal = f.get('default_price')
+    const estimatedCostVal = f.get('estimated_cost')
+    const payload = tab === 'services'
+      ? {
+          ...common,
+          category: String(f.get('category') || '').trim(),
+          estimated_cost: estimatedCostVal !== null && estimatedCostVal !== '' ? Number(estimatedCostVal) : 0,
+          default_price: defaultPriceVal !== null && defaultPriceVal !== '' ? Number(defaultPriceVal) : 0,
+          average_minutes: f.get('average_minutes') ? Number(f.get('average_minutes')) : null,
+          description: String(f.get('description') || '').trim() || null
+        }
+      : {
+          ...common,
+          unit: String(f.get('unit') || '').trim(),
+          brand: String(f.get('brand') || '').trim() || null,
+          code: String(f.get('code') || '').trim() || null,
+          cost_price: Number(f.get('cost_price')),
+          sale_price: Number(f.get('sale_price')),
+          stock: Number(f.get('stock')),
+          minimum_stock: Number(f.get('minimum_stock'))
+        }
     try{if(modal==='edit'&&selected)await api.put(`/${tab}/${selected.id}`,payload);else await api.post(`/${tab}`,payload);setModal(null);setNotice(modal==='edit'?'Cadastro atualizado.':'Cadastro criado.');await reload()}catch(error){setMessage(error instanceof Error?error.message:'Não foi possível salvar o cadastro.')}finally{setBusy(false)}
   }
   const remove=async()=>{if(!selected)return;setBusy(true);setMessage('');try{await api.delete(`/${tab}/${selected.id}`);setModal(null);setSelected(null);setNotice(tab==='services'?'Serviço excluído.':'Produto excluído.');await reload()}catch(error){setMessage(error instanceof Error?error.message:'Não foi possível excluir este cadastro.')}finally{setBusy(false)}}
@@ -138,8 +283,72 @@ export function CatalogPage(){
     {notice&&<Notice text={notice} tone="success"/>}
     <section className="panel table-panel"><div className="data-table"><div className="table-head catalog-grid"><span>Nome</span><span>Categoria</span><span>{tab==='services'?'Preço padrão':'Estoque'}</span><span>{tab==='services'?'Tempo médio':'Venda'}</span><span>Status</span><span></span></div>{rows.map(item=><button type="button" className="table-row catalog-grid catalog-table-row" key={item.id} onClick={()=>showItem(item)}><strong>{item.name}</strong><span>{item.category||'—'}</span><span>{tab==='services'?cash(item.default_price):`${item.stock??0} ${item.unit||'un'}`}</span><span>{tab==='services'?(item.average_minutes?`${item.average_minutes} min`:'—'):cash(item.sale_price)}</span><span><i className={`catalog-active-dot${item.active?' is-active':''}`}/>{item.active?'Ativo':'Inativo'}</span><ChevronRight/></button>)}</div>{!rows.length&&<div className="empty"><span><Package/></span><h3>{tab==='services'?'Nenhum serviço cadastrado':'Nenhum produto cadastrado'}</h3><p>Cadastre um item para montar o catálogo da empresa.</p></div>}</section>
     {(modal==='create'||modal==='edit')&&<Modal title={modal==='edit'?'Editar cadastro':tab==='services'?'Novo serviço':'Novo produto'} onClose={()=>setModal(null)}><form className="catalog-form" onSubmit={submit}>
-      <section className="catalog-form-section"><div className="catalog-form-heading"><span>{tab==='services'?<Wrench/>:<Package/>}</span><div><h3>{tab==='services'?'Dados do serviço':'Dados do produto'}</h3><p>Informações que aparecem no catálogo e nas ordens.</p></div></div><div className="form-grid"><label className="span-2">Nome <em>obrigatório</em><input name="name" required maxLength={120} defaultValue={selected?.name??''} placeholder={tab==='services'?'Ex.: Higienização de ar-condicionado':'Ex.: Filtro de ar'}/></label><label>Categoria<input name="category" maxLength={80} defaultValue={selected?.category??''} placeholder="Ex.: Manutenção"/></label><label>Status<select name="active" defaultValue={String(selected?.active??true)}><option value="true">Ativo</option><option value="false">Inativo</option></select></label>
-      {tab==='services'?<><label>Preço padrão <em>obrigatório</em><div className="catalog-input-prefix"><span>R$</span><input name="default_price" type="number" min="0" step="0.01" required defaultValue={selected?.default_price??''} placeholder="0,00"/></div></label><label>Custo estimado<div className="catalog-input-prefix"><span>R$</span><input name="estimated_cost" type="number" min="0" step="0.01" defaultValue={selected?.estimated_cost??''} placeholder="0,00"/></div></label><label>Tempo médio<input name="average_minutes" type="number" min="1" step="1" defaultValue={selected?.average_minutes??''} placeholder="Minutos"/></label><label className="span-2">Descrição<textarea name="description" rows={3} defaultValue={selected?.description??''} placeholder="Detalhes do serviço, escopo ou observações"/></label></>:<><label>Unidade <em>obrigatório</em><input name="unit" required maxLength={20} defaultValue={selected?.unit??'un'} placeholder="un, kg, m..."/></label><label>Marca<input name="brand" maxLength={80} defaultValue={selected?.brand??''} placeholder="Fabricante"/></label><label>Código<input name="code" maxLength={80} defaultValue={selected?.code??''} placeholder="SKU ou referência"/></label><div className="catalog-form-divider span-2"><span>Valores e estoque</span><i/></div><label>Custo <em>obrigatório</em><div className="catalog-input-prefix"><span>R$</span><input name="cost_price" type="number" min="0" step="0.01" required defaultValue={selected?.cost_price??''} placeholder="0,00"/></div></label><label>Preço de venda <em>obrigatório</em><div className="catalog-input-prefix"><span>R$</span><input name="sale_price" type="number" min="0" step="0.01" required defaultValue={selected?.sale_price??''} placeholder="0,00"/></div></label><label>Estoque atual <em>obrigatório</em><input name="stock" type="number" min="0" step="0.001" required defaultValue={selected?.stock??0}/></label><label>Estoque mínimo <em>obrigatório</em><input name="minimum_stock" type="number" min="0" step="0.001" required defaultValue={selected?.minimum_stock??0}/></label></>}</div></section>
+      <section className="catalog-form-section"><div className="catalog-form-heading"><span>{tab==='services'?<Wrench/>:<Package/>}</span><div><h3>{tab==='services'?'Dados do serviço':'Dados do produto'}</h3><p>Informações que aparecem no catálogo e nas ordens.</p></div></div><div className="form-grid">
+      {tab==='services'?(
+        <>
+          <label className="span-2">Nome <em>obrigatório</em>
+            <input name="name" required maxLength={120} defaultValue={selected?.name??''} placeholder="Ex.: Higienização de ar-condicionado"/>
+          </label>
+          <label>Categoria <em>obrigatório</em>
+            <input name="category" required maxLength={80} defaultValue={selected?.category??''} placeholder="Ex.: Manutenção"/>
+          </label>
+          <label>Custo <em>obrigatório</em>
+            <div className="catalog-input-prefix"><span>R$</span><input name="estimated_cost" type="number" min="0" step="0.01" required defaultValue={selected?.estimated_cost??''} placeholder="0,00"/></div>
+          </label>
+          <label>Preço padrão <small>Opcional</small>
+            <div className="catalog-input-prefix"><span>R$</span><input name="default_price" type="number" min="0" step="0.01" defaultValue={selected?.default_price??''} placeholder="0,00"/></div>
+          </label>
+          <label>Tempo médio <small>Opcional</small>
+            <input name="average_minutes" type="number" min="1" step="1" defaultValue={selected?.average_minutes??''} placeholder="Minutos"/>
+          </label>
+          <label>Status
+            <select name="active" defaultValue={String(selected?.active??true)}>
+              <option value="true">Ativo</option>
+              <option value="false">Inativo</option>
+            </select>
+          </label>
+          <label className="span-2">Descrição <small>Opcional</small>
+            <textarea name="description" rows={3} defaultValue={selected?.description??''} placeholder="Detalhes do serviço, escopo ou observações"/>
+          </label>
+        </>
+      ):(
+        <>
+          <label className="span-2">Nome <em>obrigatório</em>
+            <input name="name" required maxLength={120} defaultValue={selected?.name??''} placeholder="Ex.: Filtro de ar"/>
+          </label>
+          <label>Categoria
+            <input name="category" maxLength={80} defaultValue={selected?.category??''} placeholder="Ex.: Peças"/>
+          </label>
+          <label>Status
+            <select name="active" defaultValue={String(selected?.active??true)}>
+              <option value="true">Ativo</option>
+              <option value="false">Inativo</option>
+            </select>
+          </label>
+          <label>Unidade <em>obrigatório</em>
+            <input name="unit" required maxLength={20} defaultValue={selected?.unit??'un'} placeholder="un, kg, m..."/>
+          </label>
+          <label>Marca
+            <input name="brand" maxLength={80} defaultValue={selected?.brand??''} placeholder="Fabricante"/>
+          </label>
+          <label>Código
+            <input name="code" maxLength={80} defaultValue={selected?.code??''} placeholder="SKU ou referência"/>
+          </label>
+          <div className="catalog-form-divider span-2"><span>Valores e estoque</span><i/></div>
+          <label>Custo <em>obrigatório</em>
+            <div className="catalog-input-prefix"><span>R$</span><input name="cost_price" type="number" min="0" step="0.01" required defaultValue={selected?.cost_price??''} placeholder="0,00"/></div>
+          </label>
+          <label>Preço de venda <em>obrigatório</em>
+            <div className="catalog-input-prefix"><span>R$</span><input name="sale_price" type="number" min="0" step="0.01" required defaultValue={selected?.sale_price??''} placeholder="0,00"/></div>
+          </label>
+          <label>Estoque atual <em>obrigatório</em>
+            <input name="stock" type="number" min="0" step="0.001" required defaultValue={selected?.stock??0}/>
+          </label>
+          <label>Estoque mínimo <em>obrigatório</em>
+            <input name="minimum_stock" type="number" min="0" step="0.001" required defaultValue={selected?.minimum_stock??0}/>
+          </label>
+        </>
+      )}</div></section>
       {message&&<Notice text={message}/>}<div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(null)}>Cancelar</Btn><Btn disabled={busy}>{busy?'Salvando…':modal==='edit'?'Salvar alterações':'Criar cadastro'}</Btn></div>
     </form></Modal>}
     {modal==='detail'&&selected&&<Modal title={selected.name} onClose={()=>setModal(null)}><div className="catalog-detail"><div className="catalog-detail-summary"><span className={`catalog-active-dot${selected.active?' is-active':''}`}/><strong>{selected.active?'Ativo no catálogo':'Inativo'}</strong><span>{selected.category||'Sem categoria'}</span></div><div className="catalog-detail-grid">{tab==='services'?<><div><small>Preço padrão</small><strong>{cash(selected.default_price)}</strong></div><div><small>Custo estimado</small><strong>{selected.estimated_cost==null?'—':cash(selected.estimated_cost)}</strong></div><div><small>Tempo médio</small><strong>{selected.average_minutes?`${selected.average_minutes} min`:'—'}</strong></div><div className="span-2"><small>Descrição</small><p>{selected.description||'Sem descrição cadastrada.'}</p></div></>:<><div><small>Preço de venda</small><strong>{cash(selected.sale_price)}</strong></div><div><small>Custo</small><strong>{cash(selected.cost_price)}</strong></div><div><small>Estoque</small><strong>{selected.stock??0} {selected.unit||'un'}</strong></div><div><small>Estoque mínimo</small><strong>{selected.minimum_stock??0} {selected.unit||'un'}</strong></div><div><small>Marca</small><strong>{selected.brand||'—'}</strong></div><div><small>Código</small><strong>{selected.code||'—'}</strong></div></>}</div><div className="catalog-detail-actions"><Btn kind="secondary" onClick={openEdit}><Pencil/> Editar</Btn><Btn kind="danger" onClick={()=>{setMessage('');setModal('delete')}}><Trash2/> Excluir</Btn></div></div></Modal>}
