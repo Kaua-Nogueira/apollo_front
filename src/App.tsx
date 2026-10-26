@@ -242,15 +242,20 @@ function Customers() {
   const [errorMessage, setErrorMessage] = useState('')
   const [notice, setNotice] = useState('')
   const { data, loading, error, reload } = useRemote<Customer[]>('/customers', [])
-  const filtered = data.filter(x => x.name.toLowerCase().includes(search.toLowerCase()) || x.phone?.includes(search))
+  const filtered = data.filter(x => x.name.toLowerCase().includes(search.toLowerCase()) || x.phone?.includes(search) || x.whatsapp?.includes(search) || x.document?.includes(search))
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setBusy(true)
     setErrorMessage('')
+    const val = validateRequiredFields(event.currentTarget)
+    if (!val.valid) {
+      setErrorMessage(val.message)
+      return
+    }
+    setBusy(true)
     const form = Object.fromEntries(new FormData(event.currentTarget))
     try {
       await api.post('/customers', form)
-      setNotice('Cliente cadastrado.')
+      setNotice('Cliente cadastrado com sucesso.')
       setCreating(false)
       await reload()
     } catch (e) {
@@ -260,8 +265,8 @@ function Customers() {
     }
   }
   return <main className="content"><PageHeader eyebrow="RELACIONAMENTO" title="Clientes"><Button onClick={() => { setErrorMessage(''); setCreating(true) }}><Plus /> Novo cliente</Button></PageHeader>
-    <div className="toolbar"><label className="search"><Search /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome ou telefone" /></label><span>{filtered.length} clientes</span></div>
-    {error && <SystemAlert>{error}</SystemAlert>}{notice && <SystemAlert tone="success" onDismiss={() => setNotice('')}>{notice}</SystemAlert>}{errorMessage && !creating && <SystemAlert>{errorMessage}</SystemAlert>}{loading ? <Loading /> : <section className="panel table-panel"><div className="data-table"><div className="table-head customer-grid"><span>Cliente</span><span>Contato</span><span>Endereços</span><span>Equipamentos</span><span>OS</span><span></span></div>{filtered.map(customer => <NavLink to={`/clientes/${customer.id}`} className="table-row customer-grid customer-table-row" key={customer.id}><div className="customer-name"><span className="avatar soft">{customer.name[0]}</span><div><strong>{customer.name}</strong><small>{customer.document || 'Documento não informado'}</small></div></div><div><strong>{customer.phone}</strong><small>{customer.email || 'Sem e-mail'}</small></div><span>{customer.addresses?.length ?? 0}</span><span>{customer.equipment?.length ?? 0}</span><span>{customer.work_orders_count ?? 0}</span><ChevronRight /></NavLink>)}</div>{!filtered.length && <Empty icon={<Users />} title="Nenhum cliente encontrado" text={search ? 'Tente buscar por outro nome ou telefone.' : 'Cadastre o primeiro cliente para começar.'} />}</section>}
+    <div className="toolbar"><label className="search"><Search /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome, WhatsApp ou CPF/CNPJ" /></label><span>{filtered.length} clientes</span></div>
+    {error && <SystemAlert>{error}</SystemAlert>}{notice && <SystemAlert tone="success" onDismiss={() => setNotice('')}>{notice}</SystemAlert>}{errorMessage && !creating && <SystemAlert>{errorMessage}</SystemAlert>}{loading ? <Loading /> : <section className="panel table-panel"><div className="data-table"><div className="table-head customer-grid"><span>Cliente</span><span>Contato</span><span>Endereços</span><span>Equipamentos</span><span>OS</span><span></span></div>{filtered.map(customer => <NavLink to={`/clientes/${customer.id}`} className="table-row customer-grid customer-table-row" key={customer.id}><div className="customer-name"><span className="avatar soft">{customer.name[0]}</span><div><strong>{customer.name}</strong><small>{customer.document || 'Sem documento'}</small></div></div><div><strong>{customer.whatsapp || customer.phone || 'Sem contato'}</strong><small>{customer.email || 'Sem e-mail'}</small></div><span>{customer.addresses?.length ?? 0}</span><span>{customer.equipment?.length ?? 0}</span><span>{customer.work_orders_count ?? 0}</span><ChevronRight /></NavLink>)}</div>{!filtered.length && <Empty icon={<Users />} title="Nenhum cliente encontrado" text={search ? 'Tente buscar por outro nome ou telefone.' : 'Cadastre o primeiro cliente para começar.'} />}</section>}
     {creating && <div className="modal-layer"><button className="modal-backdrop" onClick={() => setCreating(false)} aria-label="Fechar" /><form className="modal customer-form-modal" onSubmit={save}><div className="modal-header"><div className="modal-heading"><span className="modal-symbol"><Plus /></span><div><p className="eyebrow">RELACIONAMENTO</p><h2>Novo cliente</h2><small>Cadastre os dados e a pessoa de contato principal.</small></div></div><button type="button" className="icon-button" onClick={() => setCreating(false)} aria-label="Fechar"><X /></button></div><CustomerFormFields />{errorMessage && <SystemAlert>{errorMessage}</SystemAlert>}<div className="modal-actions"><Button type="button" kind="ghost" onClick={() => setCreating(false)}>Cancelar</Button><Button disabled={busy}>{busy ? 'Salvando...' : 'Salvar cliente'}</Button></div></form></div>}
   </main>
 }
