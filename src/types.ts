@@ -69,6 +69,7 @@ export interface BusinessDocument {
   total: number
   notes?: string
   work_order?: { id: number; number: string; total?: number; status?: string }
+  work_orders?: Array<{ id: number; number: string; total?: number; status?: string }>
   customer?: Customer
   items: BusinessDocumentItem[]
 }
@@ -98,6 +99,7 @@ export interface WorkOrder {
   attachments?: Attachment[]
   status_history?: WorkOrderEvent[]
   documents?: BusinessDocument[]
+  consolidated_documents?: BusinessDocument[]
 }
 export interface DashboardData { metrics: { appointments_today: number; completed_today: number; in_progress: number; technicians_working: number; revenue_today: number; revenue_month: number; receivable: number; overdue: number }; upcoming: Appointment[]; preventive_due: number; low_stock: number }
 

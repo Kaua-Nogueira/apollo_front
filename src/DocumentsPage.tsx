@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Banknote, ClipboardCheck, Eye, FileCheck2, MessageCircle,
+  Banknote, ClipboardCheck, Eye, FileCheck2, Layers, MessageCircle,
   Plus, Printer, ReceiptText, Search, Trash2, UserRound, Wrench, X
 } from 'lucide-react'
 import { api } from './api'
@@ -327,6 +327,21 @@ export function DocumentsPage() {
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [confirmError, setConfirmError] = useState('')
 
+  // Document deletion modal
+  const [docToDelete, setDocToDelete] = useState<BusinessDocument | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+
+  // Consolidate multiple Work Orders into 1 receipt
+  const [consolidateModalOpen, setConsolidateModalOpen] = useState(false)
+  const [consolidateCustomerId, setConsolidateCustomerId] = useState('')
+  const [selectedWoIds, setSelectedWoIds] = useState<number[]>([])
+  const [consolidatePaymentMethod, setConsolidatePaymentMethod] = useState('pix')
+  const [consolidateIssuedAt, setConsolidateIssuedAt] = useState(localDate())
+  const [consolidateRegisterPayment, setConsolidateRegisterPayment] = useState(true)
+  const [consolidateNotes, setConsolidateNotes] = useState('')
+  const [consolidateBusy, setConsolidateBusy] = useState(false)
+  const [consolidateError, setConsolidateError] = useState('')
+
   const isOrderReceipt = type === 'receipt' && receiptOrigin === 'order'
   const selectedCustomer = customers.find(customer => customer.id === Number(customerId))
   const selectedAddress = selectedCustomer?.addresses?.find(address => address.id === Number(addressId))
@@ -452,6 +467,16 @@ export function DocumentsPage() {
     const tabParam = searchParams.get('tab') as TabMode | null
     if (tabParam && ['receipts', 'quotes', 'create', 'view'].includes(tabParam)) {
       setTab(tabParam)
+    }
+
+    const consolidateParam = searchParams.get('consolidate')
+    const customerIdParam = searchParams.get('customer_id')
+    if (consolidateParam === '1') {
+      setTab('receipts')
+      if (customerIdParam) {
+        setConsolidateCustomerId(customerIdParam)
+      }
+      setConsolidateModalOpen(true)
     }
   }, [searchParams, orders])
 
@@ -630,6 +655,63 @@ export function DocumentsPage() {
     setTab('view')
   }
 
+  const handleDeleteDocument = async () => {
+    if (!docToDelete) return
+    setDeleteBusy(true)
+    try {
+      await api.delete(`/documents/${docToDelete.id}`)
+      setMessage(`${docToDelete.type === 'quote' ? 'Orçamento' : 'Recibo'} ${docToDelete.number} excluído com sucesso.`)
+      setMessageTone('success')
+      if (created?.id === docToDelete.id) {
+        setCreated(null)
+        setTab(docToDelete.type === 'quote' ? 'quotes' : 'receipts')
+      }
+      setDocToDelete(null)
+      await reload()
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Não foi possível excluir o documento.')
+      setMessageTone('error')
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
+  const handleConsolidateReceipt = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!consolidateCustomerId) {
+      setConsolidateError('Selecione um cliente.')
+      return
+    }
+    if (selectedWoIds.length < 2) {
+      setConsolidateError('Selecione pelo menos 2 ordens de serviço para unificar.')
+      return
+    }
+    setConsolidateBusy(true)
+    setConsolidateError('')
+    try {
+      const res = await api.post<{ message: string; data: BusinessDocument }>('/documents/consolidate-receipt', {
+        customer_id: Number(consolidateCustomerId),
+        work_order_ids: selectedWoIds,
+        payment_method: consolidatePaymentMethod,
+        issued_at: consolidateIssuedAt || undefined,
+        notes: consolidateNotes || undefined,
+        register_payment: consolidateRegisterPayment,
+      })
+      setConsolidateModalOpen(false)
+      setSelectedWoIds([])
+      await reload()
+      setCreated(res.data)
+      setType('receipt')
+      setTab('view')
+      setMessage(res.message || `Recibo consolidado ${res.data.number} emitido com sucesso!`)
+      setMessageTone('success')
+    } catch (err) {
+      setConsolidateError(err instanceof Error ? err.message : 'Não foi possível emitir o recibo unificado.')
+    } finally {
+      setConsolidateBusy(false)
+    }
+  }
+
   return (
     <main className="content documents-page">
       <Header eyebrow="DOCUMENTOS COMERCIAIS" title="Orçamentos e recibos" />
@@ -716,6 +798,14 @@ export function DocumentsPage() {
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
                 <Plus size={16} /> Emitir outro
+              </Btn>
+              <Btn
+                kind="danger"
+                onClick={() => setDocToDelete(created)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                title={`Excluir este ${created.type === 'quote' ? 'orçamento' : 'recibo'}`}
+              >
+                <Trash2 size={16} /> Excluir {created.type === 'quote' ? 'Orçamento' : 'Recibo'}
               </Btn>
             </div>
           </div>
@@ -833,9 +923,24 @@ export function DocumentsPage() {
               <p className="eyebrow">COMPROVANTES FINANCEIROS</p>
               <h2 style={{ margin: 0 }}>Recibos emitidos</h2>
             </div>
-            <Btn onClick={() => { setType('receipt'); setReceiptOrigin('order'); setTab('create'); setCreated(null); }}>
-              <Plus /> Emitir Recibo
-            </Btn>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Btn
+                kind="secondary"
+                onClick={() => {
+                  setConsolidateCustomerId('')
+                  setSelectedWoIds([])
+                  setConsolidateError('')
+                  setConsolidateModalOpen(true)
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                title="Unir múltiplas ordens de serviço do mesmo cliente em um único recibo"
+              >
+                <Layers size={16} /> Unir OS em 1 Recibo
+              </Btn>
+              <Btn onClick={() => { setType('receipt'); setReceiptOrigin('order'); setTab('create'); setCreated(null); }}>
+                <Plus /> Emitir Recibo
+              </Btn>
+            </div>
           </div>
 
           <section className="order-summary-strip" style={{ marginBottom: 16 }}>
@@ -901,7 +1006,15 @@ export function DocumentsPage() {
                     <span>{formatDate(rec.issued_at)}</span>
                     <span>{paymentLabels[rec.payment_method || 'pix']}</span>
                     <div>
-                      {rec.work_order_id ? (
+                      {rec.work_orders && rec.work_orders.length > 1 ? (
+                        <span
+                          className="pill info"
+                          style={{ fontSize: '0.72rem', padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          title={rec.work_orders.map(w => w.number).join(', ')}
+                        >
+                          <Layers size={11} /> {rec.work_orders.length} OSs unidas
+                        </span>
+                      ) : rec.work_order_id ? (
                         <Link
                           to={`/ordens/${rec.work_order_id}`}
                           onClick={e => e.stopPropagation()}
@@ -923,6 +1036,14 @@ export function DocumentsPage() {
                         title="Visualizar e imprimir recibo"
                       >
                         <Eye size={13} /> Ver Recibo
+                      </Btn>
+                      <Btn
+                        kind="danger"
+                        style={{ minHeight: 30, padding: '0 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        onClick={() => setDocToDelete(rec)}
+                        title="Excluir este recibo"
+                      >
+                        <Trash2 size={13} /> Excluir
                       </Btn>
                     </div>
                   </div>
@@ -1024,10 +1145,19 @@ export function DocumentsPage() {
                         <Btn
                           style={{ minHeight: 30, padding: '0 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                           onClick={() => openConfirmModal(q)}
+                          title="Gerar Ordem de Serviço a partir deste orçamento"
                         >
                           <Wrench size={13} /> Gerar OS
                         </Btn>
                       )}
+                      <Btn
+                        kind="danger"
+                        style={{ minHeight: 30, padding: '0 8px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        onClick={() => setDocToDelete(q)}
+                        title="Excluir este orçamento"
+                      >
+                        <Trash2 size={13} /> Excluir
+                      </Btn>
                     </div>
                   </div>
                 ))}
@@ -1518,6 +1648,273 @@ export function DocumentsPage() {
               <Btn type="button" kind="ghost" onClick={() => setConfirmQuote(null)}>Cancelar</Btn>
               <Btn disabled={confirmBusy}>
                 <ClipboardCheck /> {confirmBusy ? 'Gerando OS...' : 'Confirmar e Gerar OS'}
+              </Btn>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Confirmation Modal to Delete Document */}
+      {docToDelete && (
+        <div className="modal-layer">
+          <button className="modal-backdrop" onClick={() => setDocToDelete(null)} aria-label="Fechar" />
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <div className="modal-header">
+              <div className="modal-heading">
+                <span className="modal-symbol" style={{ background: '#fee2e2', color: '#b91c1c' }}><Trash2 /></span>
+                <div>
+                  <p className="eyebrow" style={{ color: '#b91c1c' }}>EXCLUIR COMPROVANTE</p>
+                  <h2>Excluir {docToDelete.type === 'quote' ? 'Orçamento' : 'Recibo'}?</h2>
+                  <small>{docToDelete.number}</small>
+                </div>
+              </div>
+              <button type="button" className="icon-button" onClick={() => setDocToDelete(null)} aria-label="Fechar"><X /></button>
+            </div>
+            <div style={{ padding: '16px 22px', color: '#334155', fontSize: '0.88rem' }}>
+              <p style={{ margin: 0 }}>
+                Tem certeza que deseja excluir o {docToDelete.type === 'quote' ? 'orçamento' : 'recibo'} <strong>{docToDelete.number}</strong> de <strong>{docToDelete.customer_name}</strong> no valor de <strong>{currency(docToDelete.total)}</strong>?
+              </p>
+              <div className="system-alert" style={{ marginTop: 12, fontSize: '0.78rem' }}>
+                Esta ação removerá o comprovante do sistema. O histórico operacional da ordem continuará preservado.
+              </div>
+            </div>
+            <div className="modal-actions">
+              <Btn type="button" kind="ghost" onClick={() => setDocToDelete(null)}>Cancelar</Btn>
+              <Btn kind="danger" disabled={deleteBusy} onClick={handleDeleteDocument}>
+                <Trash2 size={15} /> {deleteBusy ? 'Excluindo...' : 'Sim, excluir'}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal to Consolidate multiple Work Orders into 1 Receipt */}
+      {consolidateModalOpen && (
+        <div className="modal-layer">
+          <button className="modal-backdrop" onClick={() => setConsolidateModalOpen(false)} aria-label="Fechar" />
+          <form className="modal" style={{ maxWidth: 740, width: '95vw' }} onSubmit={handleConsolidateReceipt}>
+            <div className="modal-header">
+              <div className="modal-heading">
+                <span className="modal-symbol" style={{ background: '#0f766e', color: '#fff' }}>
+                  <Layers />
+                </span>
+                <div>
+                  <p className="eyebrow" style={{ color: '#0f766e' }}>RECIBO UNIFICADO</p>
+                  <h2>Unir Ordens de Serviço em 1 Recibo</h2>
+                  <small>Emita um único recibo com todos os itens de múltiplas OSs do mesmo cliente</small>
+                </div>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setConsolidateModalOpen(false)} aria-label="Fechar">
+                <X />
+              </button>
+            </div>
+
+            <div style={{ padding: '16px 22px', maxHeight: '72vh', overflowY: 'auto' }}>
+              <div className="form-grid">
+                <label className="span-2">
+                  Cliente <em>obrigatório</em>
+                  <select
+                    value={consolidateCustomerId}
+                    onChange={e => {
+                      setConsolidateCustomerId(e.target.value)
+                      setSelectedWoIds([])
+                      setConsolidateError('')
+                    }}
+                    required
+                  >
+                    <option value="">Selecione o cliente...</option>
+                    {customers.map(c => {
+                      const count = orders.filter(o => o.customer?.id === c.id).length
+                      return (
+                        <option key={c.id} value={c.id}>
+                          {c.name} {c.document ? `· ${c.document}` : ''} ({count} {count === 1 ? 'OS' : 'OSs'})
+                        </option>
+                      )
+                    })}
+                  </select>
+                </label>
+              </div>
+
+              {consolidateCustomerId ? (
+                (() => {
+                  const customerOrders = orders.filter(o => o.customer?.id === Number(consolidateCustomerId))
+                  if (customerOrders.length < 2) {
+                    return (
+                      <div className="system-alert" style={{ marginTop: 14 }}>
+                        Este cliente possui {customerOrders.length === 1 ? 'apenas 1 ordem de serviço' : 'nenhuma ordem de serviço'} no momento. Para gerar um recibo unificado, cadastre ou vincule pelo menos 2 ordens de serviço.
+                      </div>
+                    )
+                  }
+
+                  const selectedOrders = customerOrders.filter(o => selectedWoIds.includes(o.id))
+                  const totalConsolidated = selectedOrders.reduce((sum, o) => sum + Number(o.total || 0), 0)
+                  const openBalanceTotal = selectedOrders.reduce((sum, o) => sum + Number(o.balance || 0), 0)
+
+                  return (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--muted)' }}>
+                          Selecione as Ordens de Serviço ({selectedWoIds.length} de {customerOrders.length} marcadas):
+                        </span>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            type="button"
+                            className="button button-ghost"
+                            style={{ fontSize: '0.74rem', padding: '3px 8px', minHeight: 26 }}
+                            onClick={() => setSelectedWoIds(customerOrders.map(o => o.id))}
+                          >
+                            Selecionar todas
+                          </button>
+                          <button
+                            type="button"
+                            className="button button-ghost"
+                            style={{ fontSize: '0.74rem', padding: '3px 8px', minHeight: 26 }}
+                            onClick={() => setSelectedWoIds([])}
+                          >
+                            Desmarcar
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, padding: 8, background: '#f8fafc' }}>
+                        {customerOrders.map(order => {
+                          const isSelected = selectedWoIds.includes(order.id)
+                          const itemCount = (order.services?.length || 0) + (order.products?.length || 0)
+                          return (
+                            <label
+                              key={order.id}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 12,
+                                padding: '10px 14px',
+                                background: isSelected ? '#ecfdf5' : '#ffffff',
+                                border: `1px solid ${isSelected ? '#6ee7b7' : '#e2e8f0'}`,
+                                borderRadius: 8,
+                                cursor: 'pointer',
+                                margin: 0,
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  if (isSelected) {
+                                    setSelectedWoIds(ids => ids.filter(id => id !== order.id))
+                                  } else {
+                                    setSelectedWoIds(ids => [...ids, order.id])
+                                  }
+                                }}
+                                style={{ width: 18, height: 18, cursor: 'pointer' }}
+                              />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                  <strong style={{ fontSize: '0.88rem', color: '#0f172a' }}>{order.number}</strong>
+                                  <strong style={{ fontSize: '0.9rem', color: '#166534' }}>{currency(order.total)}</strong>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 3, fontSize: '0.74rem', color: 'var(--muted)' }}>
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {formatDate(order.scheduled_at)} · {itemCount} item(ns){order.problem_reported ? ` · ${order.problem_reported}` : ''}
+                                  </span>
+                                  <span>
+                                    {order.balance > 0 ? (
+                                      <span style={{ color: '#b45309', fontWeight: 600 }}>Saldo: {currency(order.balance)}</span>
+                                    ) : (
+                                      <span style={{ color: '#166534', fontWeight: 600 }}>Quitada</span>
+                                    )}
+                                  </span>
+                                </div>
+                              </div>
+                            </label>
+                          )
+                        })}
+                      </div>
+
+                      {/* Summary cards */}
+                      <div style={{ marginTop: 14, background: '#f1f5f9', borderRadius: 10, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                        <div>
+                          <span style={{ fontSize: '0.74rem', color: '#64748b', display: 'block' }}>Valor consolidado do recibo</span>
+                          <strong style={{ fontSize: '1.25rem', color: '#0f766e' }}>{currency(totalConsolidated)}</strong>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.74rem', color: '#64748b', display: 'block' }}>Saldo total pendente</span>
+                          <strong style={{ fontSize: '1.05rem', color: openBalanceTotal > 0 ? '#b45309' : '#166534' }}>
+                            {openBalanceTotal > 0 ? currency(openBalanceTotal) : 'Nenhum saldo pendente'}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="form-grid" style={{ marginTop: 14 }}>
+                        <label>
+                          Forma de Pagamento <em>obrigatório</em>
+                          <select
+                            value={consolidatePaymentMethod}
+                            onChange={e => setConsolidatePaymentMethod(e.target.value)}
+                            required
+                          >
+                            <option value="pix">PIX</option>
+                            <option value="cash">Dinheiro</option>
+                            <option value="credit_card">Cartão de crédito</option>
+                            <option value="debit_card">Cartão de débito</option>
+                            <option value="transfer">Transferência bancária</option>
+                            <option value="bank_slip">Boleto</option>
+                            <option value="other">Outro</option>
+                          </select>
+                        </label>
+
+                        <label>
+                          Data de Emissão <em>obrigatório</em>
+                          <input
+                            type="date"
+                            value={consolidateIssuedAt}
+                            onChange={e => setConsolidateIssuedAt(e.target.value)}
+                            required
+                          />
+                        </label>
+
+                        {openBalanceTotal > 0 && (
+                          <label className="span-2 checkbox-field" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={consolidateRegisterPayment}
+                              onChange={e => setConsolidateRegisterPayment(e.target.checked)}
+                              style={{ width: 'auto' }}
+                            />
+                            <span style={{ fontSize: '0.82rem' }}>
+                              Registrar pagamento automático para quitar o saldo das ordens selecionadas ({currency(openBalanceTotal)})
+                            </span>
+                          </label>
+                        )}
+
+                        <label className="span-2">
+                          Observações no recibo <small style={{ fontWeight: 400, color: 'var(--muted)' }}>Opcional</small>
+                          <textarea
+                            rows={2}
+                            value={consolidateNotes}
+                            placeholder={selectedOrders.length ? `Recibo referente às Ordens de Serviço: ${selectedOrders.map(o => o.number).join(', ')}.` : 'Observações...'}
+                            onChange={e => setConsolidateNotes(e.target.value)}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )
+                })()
+              ) : (
+                <p style={{ marginTop: 14, fontSize: '0.84rem', color: '#64748b' }}>
+                  Selecione um cliente acima para carregar as ordens de serviço disponíveis para unificação.
+                </p>
+              )}
+
+              {consolidateError && <div className="system-alert" style={{ marginTop: 12 }}>{consolidateError}</div>}
+            </div>
+
+            <div className="modal-actions" style={{ padding: '16px 24px calc(16px + env(safe-area-inset-bottom))' }}>
+              <Btn type="button" kind="ghost" onClick={() => setConsolidateModalOpen(false)}>
+                Cancelar
+              </Btn>
+              <Btn disabled={consolidateBusy || selectedWoIds.length < 2}>
+                <ReceiptText /> {consolidateBusy ? 'Emitindo...' : `Emitir Recibo (${selectedWoIds.length} OSs)`}
               </Btn>
             </div>
           </form>

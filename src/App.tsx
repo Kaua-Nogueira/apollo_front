@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from 'r
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   AirVent, ArrowRight, Banknote, Bell, Box, CalendarDays, Camera, Check, ChevronRight, CircleDollarSign,
-  ClipboardCheck, ClipboardList, Clock3, Gauge, History, Home, LogOut, MapPin, Menu, Package,
+  ClipboardCheck, ClipboardList, Clock3, Gauge, History, Home, Layers, LogOut, MapPin, Menu, Package,
   PackagePlus, PanelLeftClose, PanelLeftOpen, Plus, Printer, ReceiptText, Search,
   Settings, ShieldCheck, Sparkles, Trash2, UserRound, Users, Wrench, X,
 } from 'lucide-react'
@@ -515,31 +515,66 @@ function OrderDetail() {
             {order.balance > 0 && <Button className="full" onClick={() => setModal('payment')}><Banknote /> Registrar pagamento</Button>}
             <Button className="full" disabled={busy} onClick={generateReceiptAutomatic} style={{ background: '#0f766e', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }} title="Gera o recibo com todos os serviços e produtos desta OS e redireciona automaticamente para o documento"><ReceiptText size={18} /> {busy ? 'Gerando Recibo...' : 'Gerar Recibo Automático'}</Button>
             <Button className="full" kind="ghost" onClick={() => { setFormError(''); setModal('receipt'); }} style={{ fontSize: '0.8rem', padding: '6px 10px' }}>Personalizar recibo antes de emitir</Button>
+            <NavLink
+              to={`/documentos?consolidate=1&customer_id=${order.customer.id}`}
+              className="button button-ghost full"
+              style={{ fontSize: '0.8rem', padding: '6px 10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              title="Unir esta e outras ordens de serviço do mesmo cliente em um único recibo"
+            >
+              <Layers size={14} /> Unir OS em 1 Recibo
+            </NavLink>
           </div>
         </article>
-        {order.documents && order.documents.filter(d => d.type === 'receipt').length > 0 && (
-          <article className="panel">
-            <div className="panel-title"><h2>Recibos emitidos</h2><ReceiptText /></div>
-            <div className="history-list">
-              {order.documents.filter(d => d.type === 'receipt').map(rec => (
-                <div key={rec.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #edf1f3' }}>
-                  <div>
-                    <strong>{rec.number}</strong>
-                    <small style={{ display: 'block', color: 'var(--muted)', fontSize: '0.72rem' }}>
-                      {rec.issued_at.slice(0, 10).split('-').reverse().join('/')} · {paymentLabels[rec.payment_method || 'pix']}
-                    </small>
+        {(() => {
+          const allOrderReceipts = [
+            ...(order.documents?.filter(d => d.type === 'receipt') || []),
+            ...(order.consolidated_documents?.filter(d => d.type === 'receipt') || [])
+          ].filter((doc, idx, arr) => arr.findIndex(d => d.id === doc.id) === idx)
+
+          if (!allOrderReceipts.length) return null
+
+          return (
+            <article className="panel">
+              <div className="panel-title"><h2>Recibos emitidos</h2><ReceiptText /></div>
+              <div className="history-list">
+                {allOrderReceipts.map(rec => (
+                  <div key={rec.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #edf1f3' }}>
+                    <div>
+                      <strong>{rec.number}</strong>
+                      <small style={{ display: 'block', color: 'var(--muted)', fontSize: '0.72rem' }}>
+                        {rec.issued_at.slice(0, 10).split('-').reverse().join('/')} · {paymentLabels[rec.payment_method || 'pix']}
+                      </small>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <strong style={{ fontSize: '0.85rem' }}>{money(rec.total)}</strong>
+                      <NavLink to={`/documentos?doc_id=${rec.id}`} className="button button-secondary" style={{ minHeight: 30, padding: '0 10px', fontSize: '0.74rem', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Visualizar e imprimir recibo">
+                        <Printer size={14} /> Ver Recibo
+                      </NavLink>
+                      <button
+                        type="button"
+                        className="item-remove-button"
+                        onClick={async () => {
+                          if (window.confirm(`Confirma a exclusão do recibo ${rec.number}?`)) {
+                            try {
+                              await api.delete(`/documents/${rec.id}`)
+                              await reload()
+                            } catch {
+                              alert('Não foi possível excluir o recibo.')
+                            }
+                          }
+                        }}
+                        style={{ width: 30, height: 30 }}
+                        title="Excluir este recibo"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <strong style={{ fontSize: '0.85rem' }}>{money(rec.total)}</strong>
-                    <NavLink to={`/documentos?doc_id=${rec.id}`} className="button button-secondary" style={{ minHeight: 30, padding: '0 10px', fontSize: '0.74rem', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Visualizar e imprimir recibo">
-                      <Printer size={14} /> Ver Recibo
-                    </NavLink>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </article>
-        )}
+                ))}
+              </div>
+            </article>
+          )
+        })()}
         {order.documents && order.documents.filter(d => d.type === 'quote').length > 0 && (
           <article className="panel">
             <div className="panel-title"><h2>Orçamento de origem</h2><Banknote /></div>
@@ -549,9 +584,29 @@ function OrderDetail() {
                   <strong>{q.number}</strong>
                   <small style={{ display: 'block', color: '#166534', fontWeight: 700, fontSize: '0.72rem' }}>Aprovado · {money(q.total)}</small>
                 </div>
-                <NavLink to={`/documentos?doc_id=${q.id}`} className="button button-ghost" style={{ minHeight: 30, padding: '0 8px', fontSize: '0.74rem' }}>
-                  Ver Orçamento
-                </NavLink>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <NavLink to={`/documentos?doc_id=${q.id}`} className="button button-ghost" style={{ minHeight: 30, padding: '0 8px', fontSize: '0.74rem' }}>
+                    Ver Orçamento
+                  </NavLink>
+                  <button
+                    type="button"
+                    className="item-remove-button"
+                    onClick={async () => {
+                      if (window.confirm(`Confirma a exclusão do orçamento ${q.number}?`)) {
+                        try {
+                          await api.delete(`/documents/${q.id}`)
+                          await reload()
+                        } catch {
+                          alert('Não foi possível excluir o orçamento.')
+                        }
+                      }
+                    }}
+                    style={{ width: 30, height: 30 }}
+                    title="Excluir este orçamento"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             ))}
           </article>
