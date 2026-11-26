@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Banknote, ClipboardCheck, Eye, FileCheck2, Layers, MessageCircle,
+  AirVent, Banknote, ClipboardCheck, Eye, FileCheck2, Layers, MessageCircle,
   Plus, Printer, ReceiptText, Search, Trash2, UserRound, Wrench, X
 } from 'lucide-react'
 import { api } from './api'
@@ -391,6 +391,18 @@ export function DocumentsPage() {
   const previewTotal = created ? Number(created.total) : total
   const previewNotesText = created ? (created.notes || '') : (notes || defaultNotes || '')
   const previewOrderNumber = created ? created.work_order?.number : selectedOrder?.number
+
+  const previewEquipments = useMemo(() => {
+    const list: Array<{ id?: number; brand?: string; model?: string; type?: string; btus?: number; location?: string }> = []
+    const mainEq = created?.work_order?.equipment || selectedOrder?.equipment
+    if (mainEq) list.push(mainEq)
+    if (created?.work_orders) {
+      for (const wo of created.work_orders) {
+        if (wo.equipment && !list.some(e => e.id === wo.equipment?.id)) list.push(wo.equipment)
+      }
+    }
+    return list
+  }, [created, selectedOrder])
 
   // Lists of receipts and quotes
   const allDocs = Array.isArray(documents) ? documents : []
@@ -855,12 +867,36 @@ export function DocumentsPage() {
                 <div><small>Pagamento</small><strong>{paymentLabels[previewPaymentMethod] || 'PIX'}</strong></div>
               )}
               {previewOrderNumber && <div><small>Ordem de serviço</small><strong>{previewOrderNumber}</strong></div>}
+              {previewEquipments.length > 0 && (
+                <div>
+                  <small>Equipamento{previewEquipments.length > 1 ? 's' : ''}</small>
+                  <strong>
+                    {previewEquipments.map(e => `${e.brand || ''} ${e.model || ''} (${e.btus ? `${e.btus.toLocaleString('pt-BR')} BTUs · ` : ''}${e.location || 'Local'})`).join('; ')}
+                  </strong>
+                </div>
+              )}
             </section>
             <section className="preview-customer">
               <small>{previewType === 'quote' ? 'PROPOSTA PARA' : 'RECEBEMOS DE'}</small>
               <h2>{previewCustomerName}</h2>
               <p>{[previewCustomerDoc, previewCustomerPhone, previewCustomerEmail].filter(Boolean).join(' · ') || 'Dados de contato não informados'}</p>
               {previewCustomerAddress && <p>{previewCustomerAddress}</p>}
+              {previewEquipments.length > 0 && (
+                <div className="preview-equipment-badge">
+                  <AirVent size={14} />
+                  <div>
+                    <small>EQUIPAMENTO{previewEquipments.length > 1 ? 'S ATENDIDOS' : ' ATENDIDO'}:</small>
+                    <p>
+                      {previewEquipments.map((e, idx) => (
+                        <span key={idx}>
+                          <strong>{e.brand} {e.model || ''}</strong> · {e.type || 'Ar-Condicionado'} {e.btus ? `${e.btus.toLocaleString('pt-BR')} BTUs` : ''} · Local: <strong>{e.location || 'Não informado'}</strong>
+                          {idx < previewEquipments.length - 1 ? ' | ' : ''}
+                        </span>
+                      ))}
+                    </p>
+                  </div>
+                </div>
+              )}
             </section>
             <section className="preview-items">
               <div className="preview-item header"><span>Descrição</span><span>Qtd.</span><span>Valor</span><span>Total</span></div>
@@ -1508,12 +1544,36 @@ export function DocumentsPage() {
                     <div><small>Pagamento</small><strong>{paymentLabels[previewPaymentMethod] || 'PIX'}</strong></div>
                   )}
                   {previewOrderNumber && <div><small>Ordem de serviço</small><strong>{previewOrderNumber}</strong></div>}
+                  {previewEquipments.length > 0 && (
+                    <div>
+                      <small>Equipamento{previewEquipments.length > 1 ? 's' : ''}</small>
+                      <strong>
+                        {previewEquipments.map(e => `${e.brand || ''} ${e.model || ''} (${e.btus ? `${e.btus.toLocaleString('pt-BR')} BTUs · ` : ''}${e.location || 'Local'})`).join('; ')}
+                      </strong>
+                    </div>
+                  )}
                 </section>
                 <section className="preview-customer">
                   <small>{previewType === 'quote' ? 'PROPOSTA PARA' : 'RECEBEMOS DE'}</small>
                   <h2>{previewCustomerName}</h2>
                   <p>{[previewCustomerDoc, previewCustomerPhone, previewCustomerEmail].filter(Boolean).join(' · ') || 'Dados de contato não informados'}</p>
                   {previewCustomerAddress && <p>{previewCustomerAddress}</p>}
+                  {previewEquipments.length > 0 && (
+                    <div className="preview-equipment-badge">
+                      <AirVent size={14} />
+                      <div>
+                        <small>EQUIPAMENTO{previewEquipments.length > 1 ? 'S ATENDIDOS' : ' ATENDIDO'}:</small>
+                        <p>
+                          {previewEquipments.map((e, idx) => (
+                            <span key={idx}>
+                              <strong>{e.brand} {e.model || ''}</strong> · {e.type || 'Ar-Condicionado'} {e.btus ? `${e.btus.toLocaleString('pt-BR')} BTUs` : ''} · Local: <strong>{e.location || 'Não informado'}</strong>
+                              {idx < previewEquipments.length - 1 ? ' | ' : ''}
+                            </span>
+                          ))}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </section>
                 <section className="preview-items">
                   <div className="preview-item header"><span>Descrição</span><span>Qtd.</span><span>Valor</span><span>Total</span></div>

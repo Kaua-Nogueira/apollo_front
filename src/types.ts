@@ -39,11 +39,11 @@ export interface PontoData {
   }
 }
 export interface Employee { id: number; name: string; phone?: string; specialty?: string; active: boolean; user?: User }
-export interface Address { id: number; label: string; street?: string | null; number: string; district?: string | null; city?: string | null; state?: string | null; zip_code?: string | null }
+export interface Address { id: number; label: string; street?: string | null; number: string; complement?: string | null; district?: string | null; city?: string | null; state?: string | null; zip_code?: string | null }
 export interface Equipment { id: number; location: string; type: string; brand?: string; model?: string; btus?: number; serial_number?: string; refrigerant_gas?: string; next_maintenance_at?: string }
 export interface Customer { id: number; name: string; contact_name?: string; document?: string; phone: string; whatsapp?: string; email?: string; notes?: string; active: boolean; addresses?: Address[]; equipment?: Equipment[]; work_orders_count?: number }
 export interface Appointment { id: number; scheduled_at: string; duration_minutes: number; type: string; status: Status; notes?: string; customer: Customer; address: Address; technician?: Employee; equipment?: Equipment; work_order?: WorkOrder }
-export interface WorkOrderItem { id: number; name: string; quantity: number; unit_price: number; discount: number; total: number }
+export interface WorkOrderItem { id: number; name: string; quantity: number; unit_price: number; discount: number; total: number; equipment_id?: number | null; equipment?: Equipment }
 export interface WorkOrderEvent { id: number; from_status?: Status; to_status: Status; occurred_at: string; notes?: string }
 export interface Payment { id: number; amount: number; method: string; paid_at: string }
 export interface Attachment { id: number; category: string; path: string; mime_type?: string; size?: number }
@@ -68,8 +68,8 @@ export interface BusinessDocument {
   discount: number
   total: number
   notes?: string
-  work_order?: { id: number; number: string; total?: number; status?: string }
-  work_orders?: Array<{ id: number; number: string; total?: number; status?: string }>
+  work_order?: { id: number; number: string; total?: number; status?: string; equipment?: Equipment }
+  work_orders?: Array<{ id: number; number: string; total?: number; status?: string; equipment?: Equipment }>
   customer?: Customer
   items: BusinessDocumentItem[]
 }
@@ -89,8 +89,10 @@ export interface WorkOrder {
   total: number
   received: number
   balance: number
+  customer_id?: number
   customer: Customer
   address: Address
+  technician_id?: number | null
   technician?: Employee
   equipment?: Equipment
   services?: WorkOrderItem[]

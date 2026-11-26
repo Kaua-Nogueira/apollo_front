@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { NavLink, useNavigate, useParams } from 'react-router-dom'
-import { AirVent, AlertTriangle, Banknote, Box, CalendarDays, Car, Check, CheckCircle2, ChevronRight, Clock, LogIn, LogOut, MapPin, MessageCircle, Package, Pencil, Plus, ReceiptText, Route as RouteIcon, Search, ShieldCheck, Timer, Trash2, Users, Wrench, X } from 'lucide-react'
+import { AirVent, AlertTriangle, Banknote, Box, CalendarDays, Car, Check, CheckCircle2, ChevronRight, ClipboardList, Clock, Filter, LogIn, LogOut, MapPin, MessageCircle, Package, Pencil, Plus, ReceiptText, Route as RouteIcon, Search, ShieldCheck, Timer, Trash2, Users, Wrench, X } from 'lucide-react'
 import { api } from './api'
 import { SystemAlert } from './SystemAlert'
 import { CustomerFormFields } from './CustomerFormFields'
@@ -13,31 +13,57 @@ const shortDate = (value?: string) => value ? new Intl.DateTimeFormat('pt-BR', {
 export function resolveStorageUrl(url?: string | null): string {
   if (!url) return ''
 
-  // 1. If it's localhost or 127.0.0.1 (local dev), normalize to relative /storage so Vite proxy handles it
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/storage\//i.test(url)) {
-    return url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/storage\//i, '/storage/')
+  // Previews locais em memória (Blob ou Data URL do seletor de arquivos)
+  if (url.startsWith('data:') || url.startsWith('blob:')) {
+    return url
   }
 
-  // 2. If it's already an absolute URL (e.g. https://api.km5refrigeracoes.com.br/storage/...), keep it
+  const apiUrl = import.meta.env.VITE_API_URL
+  let apiOrigin = ''
+  if (apiUrl && /^https?:\/\//i.test(apiUrl)) {
+    try {
+      apiOrigin = new URL(apiUrl).origin
+    } catch {
+      // ignore
+    }
+  }
+
+  const isLocalClient = typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+
+  // Se a URL veio apontando para localhost ou 127.0.0.1:
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url)) {
+    const storagePath = url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, '')
+    const cleanStorage = storagePath.startsWith('/storage/') ? storagePath : `/storage/${storagePath.replace(/^\/+/, '')}`
+    // Em desenvolvimento local, deixa o proxy do Vite (/storage) repassar para o backend
+    if (isLocalClient) {
+      return cleanStorage
+    }
+    // Em produção, o backend enviou localhost pois APP_URL não foi ajustada; redireciona para a origem da API
+    const fallbackOrigin = apiOrigin || 'https://api.km5refrigeracoes.com.br'
+    return `${fallbackOrigin}${cleanStorage}`
+  }
+
+  // Se já for uma URL absoluta segura (ex: https://api.km5refrigeracoes.com.br/storage/...)
   if (/^https?:\/\//i.test(url)) {
     return url
   }
 
-  // 3. If it's a relative path starting with /storage/:
-  if (url.startsWith('/storage/')) {
-    const apiUrl = import.meta.env.VITE_API_URL
-    if (apiUrl && /^https?:\/\//i.test(apiUrl)) {
-      try {
-        const apiOrigin = new URL(apiUrl).origin
-        return `${apiOrigin}${url}`
-      } catch {
-        // fallback to relative if invalid URL
-      }
-    }
-    return url
+  // Normaliza caminhos relativos
+  const normalizedPath = url.startsWith('/storage/')
+    ? url
+    : url.startsWith('storage/')
+      ? `/${url}`
+      : `/storage/${url.replace(/^\/+/, '')}`
+
+  // Em desenvolvimento local, usa o proxy do Vite
+  if (isLocalClient) {
+    return normalizedPath
   }
 
-  return url
+  // Em produção, prefixa com a origem da API backend
+  const origin = apiOrigin || (typeof window !== 'undefined' && window.location.origin ? '' : 'https://api.km5refrigeracoes.com.br')
+  return origin ? `${origin}${normalizedPath}` : normalizedPath
 }
 
 export function useData<T>(path: string, initial: T) {
@@ -179,14 +205,14 @@ function CustomerAddressForm({ busy, message, onSubmit, onCancel }: { busy: bool
   </form>
 }
 
-type Equipment = { id:number; customer_id:number; location:string; type:string; brand?:string; model?:string; btus?:number; voltage?:string; serial_number?:string; refrigerant_gas?:string; maintenance_interval_months?:number; next_maintenance_at?:string; active:boolean; customer?:Customer; address?:{id:number;label:string;district:string;city:string}; work_orders?:Array<{id:number;number:string;scheduled_at:string;status:string;solution?:string}> }
+type Equipment = { id:number; customer_id:number; location:string; type:string; brand?:string; model?:string; btus?:number; voltage?:string; serial_number?:string; refrigerant_gas?:string; maintenance_interval_months?:number; next_maintenance_at?:string; active:boolean; customer?:Customer; address?:{id:number;label:string;district:string;city:string}; work_orders?:Array<{id:number;number:string;scheduled_at:string;status:string;problem_reported?:string;solution?:string}> }
 type CatalogItem = { id:number; name:string; category?:string|null; description?:string|null; default_price?:number; estimated_cost?:number; average_minutes?:number; cost_price?:number; sale_price?:number; stock?:number; minimum_stock?:number; unit?:string; brand?:string|null; code?:string|null; active:boolean }
 type Entry = { id:number; type:string; occurred_at:string; employee?:Employee; employee_id?:number; work_date?:string; adjusted?:boolean; notes?:string|null }
 
 export function CustomerDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { data: customer, loading, error, reload } = useData<Customer & { addresses: Array<{id:number;label:string;street?:string|null;number:string;district?:string|null;city?:string|null;state?:string|null}>; equipment: Equipment[] }>(`/customers/${id}`, {} as Customer & { addresses: []; equipment: [] })
+  const { data: customer, loading, error, reload } = useData<Customer & { addresses: Array<{id:number;label:string;street?:string|null;number:string;district?:string|null;city?:string|null;state?:string|null}>; equipment: Equipment[]; work_orders?: Array<{id:number;number:string;scheduled_at:string;status:string;problem_reported?:string;solution?:string}> }>(`/customers/${id}`, {} as Customer & { addresses: []; equipment: []; work_orders: [] })
   const [tab, setTab] = useState<'addresses'|'equipment'|'history'>('addresses')
   const [modal, setModal] = useState<'address'|'equipment'|'edit'|'delete'|null>(null)
   const [message, setMessage] = useState('')
@@ -226,7 +252,9 @@ export function CustomerDetail() {
   }
   if (loading) return <main className="content"><Loader /></main>
   if (error) return <main className="content"><Notice text={error}/></main>
-  return <main className="content"><button className="back-link" onClick={()=>navigate('/clientes')}>← Clientes</button>{message && modal === null && <Notice text={message} tone={messageTone}/>}<Header eyebrow="CADASTRO COMPLETO" title={customer.name}><Btn kind="danger" onClick={()=>{setMessage('');setModal('delete')}}><Trash2 /> Excluir</Btn><Btn kind="secondary" onClick={()=>{setMessage('');setModal('edit')}}><Pencil /> Editar cliente</Btn><Btn onClick={()=>{setMessage('');setModal(tab==='equipment'?'equipment':'address')}}><Plus /> {tab==='equipment'?'Equipamento':'Endereço'}</Btn></Header><section className="customer-hero panel"><div className="avatar large">{customer.name?.[0]}</div><div><h2>{customer.name}</h2><p>{customer.contact_name ? `${customer.contact_name} · ` : ''}{customer.whatsapp || customer.phone || 'Sem contato'} · {customer.email||'Sem e-mail'}</p><small>{customer.document||'Sem documento'}</small></div><div className="hero-stats"><span>{customer.addresses?.length||0}<small>endereços</small></span><span>{equipment?.length||0}<small>equipamentos</small></span></div></section><nav className="tabs"><button className={tab==='addresses'?'active':''} onClick={()=>setTab('addresses')}>Endereços</button><button className={tab==='equipment'?'active':''} onClick={()=>setTab('equipment')}>Equipamentos</button><button className={tab==='history'?'active':''} onClick={()=>setTab('history')}>Histórico</button></nav>{tab==='addresses'&&<section className="card-grid">{customer.addresses?.map(a=><article className="panel compact-card" key={a.id}><MapPin /><div><strong>{a.label}</strong><p>{a.street||'Rua não informada'}, {a.number}<br />{[a.district,a.city].filter(Boolean).join(' · ')||'Localidade não informada'}{a.state?`/${a.state}`:''}</p></div></article>)}</section>}{tab==='equipment'&&<section className="card-grid">{equipment?.map(e=><NavLink className="panel compact-card" to={`/equipamentos/${e.id}`} key={e.id}><AirVent /><div><strong>{e.brand} {e.model}</strong><p>{e.type} · {e.btus?.toLocaleString('pt-BR')} BTUs · {e.location}</p><small>Preventiva: {shortDate(e.next_maintenance_at)}</small></div><ChevronRight /></NavLink>)}</section>}{tab==='history'&&<section className="panel history-panel">{equipment?.flatMap(e=>e.work_orders||[]).map(o=><div className="history-row" key={o.id}><span><Wrench /></span><div><strong>{o.number}</strong><p>{shortDate(o.scheduled_at)} · {o.solution||'Atendimento registrado'}</p></div><NavLink to={`/ordens/${o.id}`}><ChevronRight /></NavLink></div>)}</section>}{modal==='address'&&<Modal title="Novo endereço" onClose={()=>setModal(null)}><CustomerAddressForm busy={busy} message={message} onSubmit={submitAddress} onCancel={()=>setModal(null)} /></Modal>}{modal==='equipment'&&<Modal title="Novo equipamento" onClose={()=>setModal(null)}><form onSubmit={submitEquipment}><div className="form-grid"><label>Endereço<select name="address_id" required>{customer.addresses?.map(a=><option key={a.id} value={a.id}>{a.label} · {a.district}</option>)}</select></label><label>Local no imóvel<input name="location" required placeholder="Sala, quarto..."/></label><label>Tipo<select name="type" defaultValue="Split"><option>Split</option><option>Janela</option><option>Cassete</option><option>Piso teto</option><option>VRF</option><option>Chiller</option><option>Outro</option></select></label><label>Marca<input name="brand"/></label><label>Modelo<input name="model"/></label><label>BTUs<input name="btus" type="number"/></label><label>Gás refrigerante<input name="refrigerant_gas"/></label><label>Periodicidade (meses)<input name="maintenance_interval_months" type="number" defaultValue="6"/></label><label>Próxima preventiva<input name="next_maintenance_at" type="date"/></label></div><div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(null)}>Cancelar</Btn><Btn disabled={busy}>{busy?'Salvando...':'Salvar equipamento'}</Btn></div></form></Modal>}{modal==='edit'&&<Modal title="Editar cliente" onClose={()=>setModal(null)}><form className="customer-form-modal" onSubmit={submitCustomer}><CustomerFormFields customer={customer}/>{message&&<Notice text={message}/>}<div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(null)}>Cancelar</Btn><Btn disabled={busy}>{busy?'Salvando...':'Salvar alterações'}</Btn></div></form></Modal>}{modal==='delete'&&<Modal title="Excluir cliente?" onClose={()=>setModal(null)}><p><strong>{customer.name}</strong> será arquivado e deixará de aparecer na lista. Endereços, equipamentos e ordens de serviço vinculadas serão preservados no histórico.</p>{message&&<Notice text={message}/>}<div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(null)}>Cancelar</Btn><Btn kind="danger" disabled={busy} onClick={()=>void archiveCustomer()}>{busy?'Excluindo...':'Arquivar cliente'}</Btn></div></Modal>}</main>
+  const customerOrders = (customer.work_orders?.length ? customer.work_orders : (equipment?.flatMap(e => e.work_orders || []) || []))
+
+  return <main className="content"><button className="back-link" onClick={()=>navigate('/clientes')}>← Clientes</button>{message && modal === null && <Notice text={message} tone={messageTone}/>}<Header eyebrow="CADASTRO COMPLETO" title={customer.name}><Btn style={{ background: '#0f766e', color: '#fff', border: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => navigate(`/ordens?create=1&customer_id=${customer.id}`)} title="Criar nova Ordem de Serviço para este cliente"><ClipboardList size={16} /> Criar OS</Btn><Btn kind="secondary" onClick={()=>{setMessage('');setModal('edit')}}><Pencil /> Editar cliente</Btn><Btn onClick={()=>{setMessage('');setModal(tab==='equipment'?'equipment':'address')}}><Plus /> {tab==='equipment'?'Equipamento':'Endereço'}</Btn><Btn kind="danger" onClick={()=>{setMessage('');setModal('delete')}}><Trash2 /> Excluir</Btn></Header><section className="customer-hero panel"><div className="avatar large">{customer.name?.[0]}</div><div><h2>{customer.name}</h2><p>{customer.contact_name ? `${customer.contact_name} · ` : ''}{customer.whatsapp || customer.phone || 'Sem contato'} · {customer.email||'Sem e-mail'}</p><small>{customer.document||'Sem documento'}</small></div><div className="hero-stats"><span>{customer.addresses?.length||0}<small>endereços</small></span><span>{equipment?.length||0}<small>equipamentos</small></span><button type="button" className="button button-primary" style={{ minHeight: 34, fontSize: '0.78rem', padding: '0 12px', display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => navigate(`/ordens?create=1&customer_id=${customer.id}`)} title="Criar nova Ordem de Serviço para este cliente"><Plus size={14} /> Nova OS</button></div></section><nav className="tabs"><button className={tab==='addresses'?'active':''} onClick={()=>setTab('addresses')}>Endereços</button><button className={tab==='equipment'?'active':''} onClick={()=>setTab('equipment')}>Equipamentos</button><button className={tab==='history'?'active':''} onClick={()=>setTab('history')}>Histórico ({customerOrders.length})</button></nav>{tab==='addresses'&&<section className="card-grid">{customer.addresses?.map(a=><article className="panel compact-card" key={a.id}><MapPin /><div><strong>{a.label}</strong><p>{a.street||'Rua não informada'}, {a.number}<br />{[a.district,a.city].filter(Boolean).join(' · ')||'Localidade não informada'}{a.state?`/${a.state}`:''}</p></div></article>)}</section>}{tab==='equipment'&&<section className="card-grid">{equipment?.map(e=><NavLink className="panel compact-card" to={`/equipamentos/${e.id}`} key={e.id}><AirVent /><div><strong>{e.brand} {e.model}</strong><p>{e.type} · {e.btus?.toLocaleString('pt-BR')} BTUs · {e.location}</p><small>Preventiva: {shortDate(e.next_maintenance_at)}</small></div><ChevronRight /></NavLink>)}</section>}{tab==='history'&&<section className="panel history-panel"><div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><h2>Ordens de serviço</h2><div style={{ display: 'flex', gap: 6 }}><Btn kind="secondary" style={{ fontSize: '0.76rem', minHeight: 28, padding: '0 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }} onClick={() => navigate(`/ordens?customer_id=${customer.id}`)} title="Ver e filtrar ordens deste cliente"><Filter size={13} /> Filtrar nas Ordens</Btn><Btn style={{ fontSize: '0.76rem', minHeight: 28, padding: '0 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }} onClick={() => navigate(`/ordens?create=1&customer_id=${customer.id}`)}><Plus size={13} /> Nova OS</Btn></div></div>{customerOrders.map(o=><div className="history-row" key={o.id}><span><Wrench /></span><div><strong>{o.number}</strong><p>{shortDate(o.scheduled_at)} · {o.problem_reported || o.solution || 'Atendimento registrado'}</p></div><NavLink to={`/ordens/${o.id}`}><ChevronRight /></NavLink></div>)}{!customerOrders.length && <p className="muted" style={{ padding: '16px 20px', margin: 0 }}>Nenhuma ordem de serviço registrada para este cliente ainda.</p>}</section>}{modal==='address'&&<Modal title="Novo endereço" onClose={()=>setModal(null)}><CustomerAddressForm busy={busy} message={message} onSubmit={submitAddress} onCancel={()=>setModal(null)} /></Modal>}{modal==='equipment'&&<Modal title="Novo equipamento" onClose={()=>setModal(null)}><form onSubmit={submitEquipment}><div className="form-grid"><label>Endereço<select name="address_id" required>{customer.addresses?.map(a=><option key={a.id} value={a.id}>{a.label} · {a.district}</option>)}</select></label><label>Local no imóvel<input name="location" required placeholder="Sala, quarto..."/></label><label>Tipo<select name="type" defaultValue="Split"><option>Split</option><option>Janela</option><option>Cassete</option><option>Piso teto</option><option>VRF</option><option>Chiller</option><option>Outro</option></select></label><label>Marca<input name="brand"/></label><label>Modelo<input name="model"/></label><label>BTUs<input name="btus" type="number"/></label><label>Gás refrigerante<input name="refrigerant_gas"/></label><label>Periodicidade (meses)<input name="maintenance_interval_months" type="number" defaultValue="6"/></label><label>Próxima preventiva<input name="next_maintenance_at" type="date"/></label></div><div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(null)}>Cancelar</Btn><Btn disabled={busy}>{busy?'Salvando...':'Salvar equipamento'}</Btn></div></form></Modal>}{modal==='edit'&&<Modal title="Editar cliente" onClose={()=>setModal(null)}><form className="customer-form-modal" onSubmit={submitCustomer}><CustomerFormFields customer={customer}/>{message&&<Notice text={message}/>}<div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(null)}>Cancelar</Btn><Btn disabled={busy}>{busy?'Salvando...':'Salvar alterações'}</Btn></div></form></Modal>}{modal==='delete'&&<Modal title="Excluir cliente?" onClose={()=>setModal(null)}><p><strong>{customer.name}</strong> será arquivado e deixará de aparecer na lista. Endereços, equipamentos e ordens de serviço vinculadas serão preservados no histórico.</p>{message&&<Notice text={message}/>}<div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(null)}>Cancelar</Btn><Btn kind="danger" disabled={busy} onClick={()=>void archiveCustomer()}>{busy?'Excluindo...':'Arquivar cliente'}</Btn></div></Modal>}</main>
 }
 
 export function EquipmentPage() { const { data,loading,error,reload }=useData<Equipment[]>('/equipment',[]);const [modal,setModal]=useState(false);const {data:customers}=useData<Customer[]>('/customers',[]);const [customerId,setCustomerId]=useState('');const selected=customers.find(c=>c.id===Number(customerId));const submit=async(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const f=new FormData(e.currentTarget);await api.post('/equipment',{...Object.fromEntries(f),customer_id:Number(f.get('customer_id')),address_id:Number(f.get('address_id')),btus:Number(f.get('btus')||0)});setModal(false);await reload()};return <main className="content"><Header eyebrow="ATIVOS DO CLIENTE" title="Equipamentos"><Btn onClick={()=>setModal(true)}><Plus/> Novo equipamento</Btn></Header>{error&&<Notice text={error}/>} {loading?<Loader/>:<section className="equipment-grid">{data.map(e=><NavLink key={e.id} className="equipment-card panel" to={`/equipamentos/${e.id}`}><span className="equipment-icon"><AirVent/></span><div><strong>{e.brand||'Sem marca'} {e.model}</strong><p>{e.type} · {e.btus?.toLocaleString('pt-BR')} BTUs</p><small>{e.customer?.name} · {e.location}</small></div><ChevronRight/></NavLink>)}</section>}{modal&&<Modal title="Novo equipamento" onClose={()=>setModal(false)}><form onSubmit={submit}><div className="form-grid"><label>Cliente<select name="customer_id" required value={customerId} onChange={e=>setCustomerId(e.target.value)}><option value="">Selecione</option>{customers.map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label><label>Endereço<select name="address_id" required disabled={!selected}><option value="">Selecione</option>{selected?.addresses?.map(a=><option key={a.id} value={a.id}>{a.label}</option>)}</select></label><label>Local<input name="location" required/></label><label>Tipo<input name="type" defaultValue="Split" required/></label><label>Marca<input name="brand"/></label><label>Modelo<input name="model"/></label><label>BTUs<input name="btus" type="number"/></label><label>Próxima preventiva<input name="next_maintenance_at" type="date"/></label></div><div className="modal-actions"><Btn kind="ghost" type="button" onClick={()=>setModal(false)}>Cancelar</Btn><Btn>Salvar</Btn></div></form></Modal>}</main> }

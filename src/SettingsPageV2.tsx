@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { Building2, FileImage, Landmark, MapPin, Palette, Save, Upload } from 'lucide-react'
 import { api } from './api'
 import { Btn, Header, Loader, Notice, resolveStorageUrl, useData } from './Modules'
@@ -18,6 +18,11 @@ function SettingsSection({ icon, title, description, children }: { icon:ReactNod
 
 function ImageField({ name, label, hint, current, variant }: { name:string; label:string; hint:string; current?:string; variant:'logo'|'header'|'footer' }) {
   const [preview, setPreview] = useState(current ? resolveStorageUrl(current) : '')
+
+  useEffect(() => {
+    setPreview(current ? resolveStorageUrl(current) : '')
+  }, [current])
+
   const change = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) setPreview(URL.createObjectURL(file))
@@ -34,7 +39,15 @@ export function SettingsPageV2() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setBusy(true); setMessage('')
     try {
-      await api.upload<CompanySettings>('/settings', new FormData(event.currentTarget))
+      const formData = new FormData(event.currentTarget)
+      // Remove arquivos vazios (quando o usuário não selecionou uma nova imagem)
+      // para evitar envio de 0 bytes que causam erro de validação no Laravel
+      for (const [key, value] of Array.from(formData.entries())) {
+        if (value instanceof File && value.size === 0) {
+          formData.delete(key)
+        }
+      }
+      await api.upload<CompanySettings>('/settings', formData)
       setTone('success'); setMessage('Configurações da empresa salvas. Os documentos já usam a nova identidade visual.'); await reload()
     } catch (err) {
       setTone('error'); setMessage(err instanceof Error ? err.message : 'Não foi possível salvar as configurações.')
